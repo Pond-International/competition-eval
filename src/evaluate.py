@@ -22,7 +22,7 @@ logger = logging.getLogger(__name__)
 
 
 def load_data(
-    ground_truth_path: str, submission_path: str, custom_split: str = None
+    ground_truth_path: str, submission_path: str, custom_split: str = None, skip_column_check: bool = False
 ) -> Tuple[pd.DataFrame, pd.DataFrame]:
     """Load ground truth and submission data.
 
@@ -50,7 +50,7 @@ def load_data(
     # Get columns without the split column if it exists
     gt_cols = [col for col in ground_truth_df.columns if col.lower() != 'split']
     
-    if not np.array_equal(gt_cols, submission_df.columns):
+    if not skip_column_check and not np.array_equal(gt_cols, submission_df.columns):
         raise ValueError("Unexpected column names in submission")
 
     if custom_split is not None and 'split' not in [col.lower() for col in ground_truth_df.columns]:
@@ -289,6 +289,11 @@ def main() -> None:
         choices=['public', 'private'],
         help="Filter data by split type (public or private)",
     )
+    parser.add_argument(
+        "--skip-column-check",
+        action="store_true",
+        help="Skip checking whether column names match between ground truth and submission",
+    )
     args = parser.parse_args()
 
     if args.data_portion != 1.0 and args.custom_split is not None:
@@ -322,7 +327,8 @@ def main() -> None:
 
         # Load data
         ground_truth_df, submission_df = load_data(
-            args.ground_truth_path, args.submission_path, args.custom_split
+            args.ground_truth_path, args.submission_path, args.custom_split,
+            args.skip_column_check
         )
         if args.metric_name == "dcg":
             if submission_df["RANK"].max() > len(ground_truth_df):
