@@ -11,6 +11,7 @@ from metrics import (
     precision_at_k,
     discounted_cumulative_gain,
     auc,
+    pairwise_cost,
 )
 
 # Common test data
@@ -249,3 +250,68 @@ def test_auc_different_lengths():
 def test_auc_not_numpy():
     with pytest.raises(ValueError, match="Inputs must be numpy arrays"):
         auc([0, 1], [0.5, 0.8])
+
+# Test pairwise cost metric
+@pytest.fixture
+def valid_pairwise_data():
+    y_true = pd.DataFrame({
+        "SOURCE_A": ["src1", "src2", "src3"],
+        "SOURCE_B": ["src2", "src3", "src4"],
+        "TARGET": ["quality", "quality", "originality"],
+        "B_OVER_A": [0.5, 0.8, 1.2]
+    })
+    y_pred = pd.DataFrame({
+        "SOURCE": ["src1", "src2", "src3", "src3"],
+        "TARGET": ["quality", "quality", "quality", "originality"],
+        "WEIGHT": [1.0, 2.0, 3.0, 4.0]
+    })
+    return y_true, y_pred
+
+def test_pairwise_cost_valid(valid_pairwise_data):
+    y_true, y_pred = valid_pairwise_data
+    cost = pairwise_cost(y_true, y_pred)
+    assert isinstance(cost, float)
+    assert cost >= 0
+
+def test_pairwise_cost_empty():
+    y_true = pd.DataFrame(columns=["SOURCE_A", "SOURCE_B", "TARGET", "B_OVER_A"])
+    y_pred = pd.DataFrame(columns=["SOURCE", "TARGET", "WEIGHT"])
+    with pytest.raises(ValueError, match="Missing weights in submission data"):
+        pairwise_cost(y_true, y_pred)
+
+def test_pairwise_cost_missing_weights():
+    y_true = pd.DataFrame({
+        "SOURCE_A": ["src1"],
+        "SOURCE_B": ["src2"],
+        "TARGET": ["quality"],
+        "B_OVER_A": [0.5]
+    })
+    y_pred = pd.DataFrame({
+        "SOURCE": ["src1"],
+        "TARGET": ["quality"],
+        "WEIGHT": [None]
+    })
+    with pytest.raises(ValueError, match="Missing weights in submission data"):
+        pairwise_cost(y_true, y_pred)
+
+def test_pairwise_cost_missing_predictions():
+    y_true = pd.DataFrame({
+        "SOURCE_A": ["src1"],
+        "SOURCE_B": ["src2"],
+        "TARGET": ["quality"],
+        "B_OVER_A": [0.5]
+    })
+    y_pred = pd.DataFrame({
+        "SOURCE": ["src3"],
+        "TARGET": ["quality"],
+        "WEIGHT": [1.0]
+    })
+    with pytest.raises(ValueError, match="Missing weights in submission data"):
+        pairwise_cost(y_true, y_pred)
+
+def test_pairwise_cost_invalid_input_type():
+    with pytest.raises(TypeError, match="y_true must be a pandas DataFrame"):
+        pairwise_cost(
+            np.array([1, 2]),
+            np.array([1, 2])
+        )

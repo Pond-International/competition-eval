@@ -184,6 +184,70 @@ def discounted_cumulative_gain(
     dcg = np.mean(true_relavance * discount)
     return dcg
 
+def pairwise_cost(
+    y_true: pd.DataFrame, 
+    y_pred: pd.DataFrame
+) -> float:
+    """Calculate pairwise cost between ground truth and recommendations.
+    
+    Args:
+        y_true: Ground truth items
+        y_pred: Recommendations
+        
+    Returns:
+        float: Pairwise cost score
+        
+    Raises:
+        TypeError: If inputs are not pandas DataFrames
+        ValueError: If inputs are invalid or missing required data
+    """
+    if not isinstance(y_true, pd.DataFrame):
+        raise TypeError("y_true must be a pandas DataFrame")
+    if not isinstance(y_pred, pd.DataFrame):
+        raise TypeError("y_pred must be a pandas DataFrame")
+    
+    # Check for empty DataFrames
+    if len(y_true) == 0 or len(y_pred) == 0:
+        raise ValueError("Missing weights in submission data")
+        
+    # Cost on pairs where TARGET != "originality"
+    y_true_pair = y_true[y_true["TARGET"]!="originality"]
+    combined_df = y_true_pair.merge(
+        y_pred, 
+        left_on=["SOURCE_A", "TARGET"], 
+        right_on=["SOURCE", "TARGET"],
+        how="left")
+    if combined_df['WEIGHT'].isnull().any():
+        raise ValueError("Missing weights in submission data")
+    combined_df.rename(columns={"WEIGHT": "WEIGHT_A"}, inplace=True)
+    
+    combined_df = combined_df.merge(
+        y_pred, 
+        left_on=["SOURCE_B", "TARGET"], 
+        right_on=["SOURCE", "TARGET"],
+        how="left")
+    if combined_df['WEIGHT'].isnull().any():
+        raise ValueError("Missing weights in submission data")
+    combined_df.rename(columns={"WEIGHT": "WEIGHT_B"}, inplace=True)
+    
+    cost_pair = ((np.log(combined_df["WEIGHT_B"]) - np.log(combined_df["WEIGHT_A"]) - combined_df["B_OVER_A"])**2).sum()
+
+    # Cost on pairs where TARGET == "originality"
+    y_true_origin = y_true[y_true["TARGET"]=="originality"]
+    if len(y_true_origin) == 0:
+        cost_origin = 0
+    else:
+        combined_df = y_true_origin.merge(
+            y_pred, 
+            left_on=["SOURCE_A", "TARGET"], 
+            right_on=["SOURCE", "TARGET"],
+            how="left")
+        if combined_df['WEIGHT'].isnull().any():
+            raise ValueError("Missing weights in submission data")
+        cost_origin = ((np.log(combined_df["WEIGHT"]) - combined_df["B_OVER_A"])**2).sum()
+
+    return float(cost_pair) + float(cost_origin)
+
 # Dictionary mapping metric names to functions
 METRICS = {
     'accuracy': accuracy,
@@ -192,5 +256,6 @@ METRICS = {
     'precision_at_k': precision_at_k,
     'dcg': discounted_cumulative_gain,
     'auc': auc,
-    'mse': mean_squared_error
+    'mse': mean_squared_error,
+    'pairwise_cost': pairwise_cost
 }

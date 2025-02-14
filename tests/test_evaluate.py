@@ -10,7 +10,8 @@ from evaluate import (
     load_data,
     process_supervised_data,
     process_recommend_data,
-    compute_metric
+    compute_metric,
+    process_pairwise_data
 )
 
 # Test fixtures
@@ -151,6 +152,68 @@ def test_load_data_missing_split_column():
 
     with pytest.raises(ValueError, match="Ground truth data does not contain a 'split' column"):
         load_data(gt_file.name, sub_file.name, custom_split="public")
+
+    os.unlink(gt_file.name)
+    os.unlink(sub_file.name)
+
+def test_load_data_skip_column_check():
+    # Create ground truth with extra column
+    ground_truth = pd.DataFrame({
+        "ADDRESS": ["ADDR1", "ADDR2"],
+        "LABEL": [1.0, 2.0],
+        "EXTRA": ["X", "Y"]
+    })
+    # Create submission with different columns
+    submission = pd.DataFrame({
+        "ADDRESS": ["ADDR1", "ADDR2"],
+        "LABEL": [1.1, 2.1]
+    })
+
+    with tempfile.NamedTemporaryFile(suffix='.parquet', delete=False) as gt_file:
+        ground_truth.to_parquet(gt_file.name)
+
+    with tempfile.NamedTemporaryFile(suffix='.csv', delete=False) as sub_file:
+        submission.to_csv(sub_file.name, index=False)
+
+    # Should fail without skip_column_check
+    with pytest.raises(ValueError, match="Unexpected column names in submission"):
+        load_data(gt_file.name, sub_file.name)
+
+    # Should succeed with skip_column_check
+    gt_df, sub_df = load_data(gt_file.name, sub_file.name, skip_column_check=True)
+    assert set(gt_df.columns) == {"ADDRESS", "LABEL", "EXTRA"}
+    assert set(sub_df.columns) == {"ADDRESS", "LABEL"}
+
+    os.unlink(gt_file.name)
+    os.unlink(sub_file.name)
+
+def test_load_data_skip_column_check_with_split():
+    # Create ground truth with split and extra column
+    ground_truth = pd.DataFrame({
+        "ADDRESS": ["ADDR1", "ADDR2"],
+        "LABEL": [1.0, 2.0],
+        "SPLIT": ["public", "private"],
+        "EXTRA": ["X", "Y"]
+    })
+    # Create submission with different columns
+    submission = pd.DataFrame({
+        "ADDRESS": ["ADDR1", "ADDR2"],
+        "LABEL": [1.1, 2.1]
+    })
+
+    with tempfile.NamedTemporaryFile(suffix='.parquet', delete=False) as gt_file:
+        ground_truth.to_parquet(gt_file.name)
+
+    with tempfile.NamedTemporaryFile(suffix='.csv', delete=False) as sub_file:
+        submission.to_csv(sub_file.name, index=False)
+
+    # Should succeed with skip_column_check and custom_split
+    gt_df, sub_df = load_data(gt_file.name, sub_file.name, custom_split="public", skip_column_check=True)
+    assert "SPLIT" in gt_df.columns
+    assert "EXTRA" in gt_df.columns
+    public_rows = gt_df[gt_df["SPLIT"].str.lower() == "public"]
+    assert len(public_rows) == 1  # Only public split
+    assert public_rows["SPLIT"].iloc[0].lower() == "public"
 
     os.unlink(gt_file.name)
     os.unlink(sub_file.name)
@@ -456,3 +519,99 @@ def test_compute_metric_invalid():
     y_pred = np.array([1.1, 2.1])
     with pytest.raises(ValueError, match="Unknown metric"):
         compute_metric(y_true, y_pred, "invalid_metric")
+
+# Test process_pairwise_data
+@pytest.fixture
+def sample_pairwise_data():
+    ground_truth = pd.DataFrame([
+        ["src1", "src2", "quality", 0.5],
+        ["src2", "src3", "quality", 0.8],
+        ["src3", "src4", "originality", 1.2]
+    ], columns=["SOURCE_A", "SOURCE_B", "TARGET", "B_OVER_A"])
+    submission = pd.DataFrame([
+        ["src1", "quality", 1.0],
+        ["src2", "quality", 2.0],
+        ["src3", "quality", 3.0],
+        ["src3", "originality", 4.0]
+    ], columns=["SOURCE", "TARGET", "WEIGHT"])
+    return ground_truth, submission
+
+@pytest.fixture
+def sample_pairwise_split_data():
+    ground_truth = pd.DataFrame([
+        ["src1", "src2", "quality", 0.5, "public"],
+        ["src2", "src3", "quality", 0.8, "public"],
+        ["src3", "src4", "originality", 1.2, "private"],
+        ["src4", "src5", "quality", 1.5, "private"]
+    ], columns=["SOURCE_A", "SOURCE_B", "TARGET", "B_OVER_A", "SPLIT"])
+    submission = pd.DataFrame([
+        ["src1", "quality", 1.0],
+        ["src2", "quality", 2.0],
+        ["src3", "quality", 3.0],
+        ["src3", "originality", 4.0],
+        ["src4", "quality", 5.0],
+        ["src5", "quality", 6.0]
+    ], columns=["SOURCE", "TARGET", "WEIGHT"])
+    return ground_truth, submission
+
+def test_process_pairwise_data_valid(sample_pairwise_data):
+    ground_truth, submission = sample_pairwise_data
+    gt_processed, sub_processed = process_pairwise_data(ground_truth, submission)
+    
+    assert isinstance(gt_processed, pd.DataFrame)
+    assert isinstance(sub_processed, pd.DataFrame)
+    assert set(gt_processed.columns) == {"SOURCE_A", "SOURCE_B", "TARGET", "B_OVER_A"}
+    assert set(sub_processed.columns) == {"SOURCE", "TARGET", "WEIGHT"}
+    assert len(gt_processed) == 3
+    assert len(sub_processed) == 4
+    
+    # Check case conversion
+    assert gt_processed["SOURCE_A"].str.isupper().all()
+    assert gt_processed["SOURCE_B"].str.isupper().all()
+    assert gt_processed["TARGET"].str.isupper().all()
+    assert sub_processed["SOURCE"].str.isupper().all()
+    assert sub_processed["TARGET"].str.isupper().all()
+
+def test_process_pairwise_data_with_split(sample_pairwise_split_data):
+    ground_truth, submission = sample_pairwise_split_data
+    gt_processed, sub_processed = process_pairwise_data(ground_truth, submission, custom_split="public")
+    
+    assert len(gt_processed) == 2  # Only public split rows
+    assert all(row["TARGET"] == "QUALITY" for _, row in gt_processed.iterrows())
+    
+    # Test private split
+    gt_processed, _ = process_pairwise_data(ground_truth, submission, custom_split="private")
+    assert len(gt_processed) == 2  # Only private split rows
+
+def test_process_pairwise_data_invalid_split(sample_pairwise_split_data):
+    ground_truth, submission = sample_pairwise_split_data
+    with pytest.raises(ValueError, match="custom_split must be either 'public' or 'private'"):
+        process_pairwise_data(ground_truth, submission, custom_split="invalid")
+
+def test_process_pairwise_data_duplicate_predictions():
+    ground_truth = pd.DataFrame([
+        ["src1", "src2", "quality", 0.5]
+    ], columns=["SOURCE_A", "SOURCE_B", "TARGET", "B_OVER_A"])
+    submission = pd.DataFrame([
+        ["src1", "quality", 1.0],
+        ["src1", "quality", 2.0]  # Duplicate
+    ], columns=["SOURCE", "TARGET", "WEIGHT"])
+    
+    with pytest.raises(ValueError, match="Submission contains duplicate rows for SOURCE and TARGET combinations"):
+        process_pairwise_data(ground_truth, submission)
+
+def test_process_pairwise_data_case_insensitive(sample_pairwise_data):
+    ground_truth, submission = sample_pairwise_data
+    # Modify case in both dataframes
+    ground_truth.loc[0, "SOURCE_A"] = "SRC1"
+    ground_truth.loc[0, "TARGET"] = "QUALITY"
+    submission.loc[0, "SOURCE"] = "src1"
+    submission.loc[0, "TARGET"] = "quality"
+    
+    gt_processed, sub_processed = process_pairwise_data(ground_truth, submission)
+    
+    # Check case normalization
+    assert gt_processed.loc[0, "SOURCE_A"] == "SRC1"
+    assert gt_processed.loc[0, "TARGET"] == "QUALITY"
+    assert sub_processed.loc[0, "SOURCE"] == "SRC1"
+    assert sub_processed.loc[0, "TARGET"] == "QUALITY"

@@ -214,6 +214,62 @@ def process_recommend_data(
 
     return ground_truth_df, submission_df
 
+def process_pairwise_data(
+    ground_truth_df: pd.DataFrame,
+    submission_df: pd.DataFrame,
+    custom_split: str = None,
+) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """Validate that ground truth and submission dataframes are compatible.
+
+    Args:
+        ground_truth_df: Ground truth dataframe
+        submission_df: Submission dataframe
+        custom_split: Optional split type ('public' or 'private') to filter data
+
+    Returns:
+        pd.DataFrame: Combined and validated dataframe
+
+    Raises:
+        ValueError: If validation fails
+    """
+
+    logger.debug("Validating pairwise ranking input data")
+
+    # Check required columns
+    logger.debug("Selecting required columns")
+    cols = ["SOURCE_A", "SOURCE_B", "TARGET", "B_OVER_A"]
+    if custom_split is not None:
+        cols.append("SPLIT")
+    ground_truth_df.columns = cols
+    ground_truth_df["SOURCE_A"] = ground_truth_df["SOURCE_A"].astype(str)
+    ground_truth_df["SOURCE_A"] = ground_truth_df["SOURCE_A"].str.upper()
+    ground_truth_df["SOURCE_B"] = ground_truth_df["SOURCE_B"].astype(str)
+    ground_truth_df["SOURCE_B"] = ground_truth_df["SOURCE_B"].str.upper()
+    ground_truth_df["TARGET"] = ground_truth_df["TARGET"].astype(str)
+    ground_truth_df["TARGET"] = ground_truth_df["TARGET"].str.upper()
+    ground_truth_df["B_OVER_A"] = ground_truth_df["B_OVER_A"].astype(float)
+
+    submission_df.columns = ["SOURCE", "TARGET", "WEIGHT"]
+    submission_df["SOURCE"] = submission_df["SOURCE"].astype(str)
+    submission_df["SOURCE"] = submission_df["SOURCE"].str.upper()
+    submission_df["TARGET"] = submission_df["TARGET"].astype(str)
+    submission_df["TARGET"] = submission_df["TARGET"].str.upper()
+    submission_df["WEIGHT"] = submission_df["WEIGHT"].astype(float)
+
+    # Check for duplicate rows based on SOURCE and TARGET columns
+    duplicate_rows = submission_df[submission_df.duplicated(subset=['SOURCE', 'TARGET'], keep=False)]
+    if not duplicate_rows.empty:
+        raise ValueError("Submission contains duplicate rows for SOURCE and TARGET combinations.")
+
+    # Filter by split if specified
+    if custom_split is not None:
+        split_value = custom_split.lower()
+        if split_value not in ['public', 'private']:
+            raise ValueError("custom_split must be either 'public' or 'private'")
+        ground_truth_df = ground_truth_df[ground_truth_df['SPLIT'].str.lower() == split_value]
+        logger.debug(f"Filtered to {split_value} split, new shape: {ground_truth_df.shape}")
+
+    return ground_truth_df, submission_df
 
 def compute_metric(
     y_true: Union[np.ndarray, pd.DataFrame],
@@ -340,6 +396,11 @@ def main() -> None:
                 ground_truth_df, submission_df, args.data_portion, args.after_split, args.custom_split
             )
             metric_params = {"k": args.topk}
+        elif args.metric_name == "pairwise_cost":
+            y_true, y_pred = process_pairwise_data(
+                ground_truth_df, submission_df, args.custom_split
+            )
+            metric_params = {}
         else:
             combined_df = process_supervised_data(
                 ground_truth_df, submission_df, args.data_portion, args.after_split, args.custom_split
