@@ -23,10 +23,18 @@ def valid_pairwise_data():
 
 def test_pairwise_cost_valid(valid_pairwise_data):
     y_true, y_pred = valid_pairwise_data
-    # Cost is calculated based on how well predicted weights match B_OVER_A ratios
+    # For our test data:
+    # (a,b): WEIGHT_B=2.0, WEIGHT_A=1.0, B_OVER_A=2.0
+    #        Difference = 2.0 - 1.0 - 2.0 = -1.0, squared = 1.0
+    # (b,c): WEIGHT_B=3.0, WEIGHT_A=2.0, B_OVER_A=1.5
+    #        Difference = 3.0 - 2.0 - 1.5 = -0.5, squared = 0.25
+    # (c,a): WEIGHT_B=1.0, WEIGHT_A=3.0, B_OVER_A=0.5
+    #        Difference = 1.0 - 3.0 - 0.5 = -2.5, squared = 6.25
     cost = pairwise_cost(y_true, y_pred)
     assert isinstance(cost, float)
     assert cost >= 0
+    expected_cost = 1.0 + 0.25 + 6.25  # Sum of squared differences
+    assert np.isclose(cost, expected_cost, rtol=1e-10)
 
 def test_pairwise_cost_empty():
     y_true = pd.DataFrame(columns=["SOURCE_A", "SOURCE_B", "TARGET", "B_OVER_A"])
