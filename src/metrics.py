@@ -324,5 +324,6 @@ METRICS = {
     'dcg': discounted_cumulative_gain,
     'auc': auc,
     'mse': mean_squared_error,
-    'pairwise_cost': pairwise_cost
+    'pairwise_cost': pairwise_cost,
+    'deepfunding': deepfunding
 }
