@@ -1,8 +1,11 @@
 """
 Metrics module for evaluating predictions against ground truth.
 """
+from typing import List
+
 import numpy as np
 import pandas as pd
+from scipy.optimize import minimize
 from sklearn.metrics import accuracy_score, roc_auc_score
 
 
@@ -189,6 +192,10 @@ def pairwise_cost(
     y_pred: pd.DataFrame
 ) -> float:
     """Calculate pairwise cost between ground truth and recommendations.
+
+    This is adapted from vbuterin's cost function at https://github.com/deepfunding/scoring/blob/main/scoring.py#L18.
+    y_true is a dataframe containing juror's samples. It must have columns "SOURCE_A", "SOURCE_B", "TARGET", and "B_OVER_A". 
+    y_pred is a dataframe containing submitted weights for each project with respect to the target project. It must have columns "SOURCE", "TARGET", and "WEIGHT". 
     
     Args:
         y_true: Ground truth items
@@ -230,7 +237,7 @@ def pairwise_cost(
         raise ValueError("Missing weights in submission data")
     combined_df.rename(columns={"WEIGHT": "WEIGHT_B"}, inplace=True)
     
-    cost_pair = ((np.log(combined_df["WEIGHT_B"]) - np.log(combined_df["WEIGHT_A"]) - combined_df["B_OVER_A"])**2).sum()
+    cost_pair = ((combined_df["WEIGHT_B"] - combined_df["WEIGHT_A"] - combined_df["B_OVER_A"])**2).sum()
 
     # Cost on pairs where TARGET == "originality"
     y_true_origin = y_true[y_true["TARGET"]=="originality"]
@@ -244,9 +251,69 @@ def pairwise_cost(
             how="left")
         if combined_df['WEIGHT'].isnull().any():
             raise ValueError("Missing weights in submission data")
-        cost_origin = ((np.log(combined_df["WEIGHT"]) - combined_df["B_OVER_A"])**2).sum()
+        cost_origin = ((combined_df["WEIGHT"] - combined_df["B_OVER_A"])**2).sum()
 
     return float(cost_pair) + float(cost_origin)
+
+def deepfunding(
+    y_true: pd.DataFrame, 
+    y_pred: List[pd.DataFrame]
+) -> float:
+    """Calculate the optimal linear combination of submitted weights to minimize pairwise cost with a given set of juror samples.
+
+    This is adapted from vbuterin's optimization function at https://github.com/deepfunding/scoring/blob/main/scoring.py#L28.
+    y_true is a dataframe containing juror's samples. It must have columns "SOURCE_A", "SOURCE_B", "TARGET", and "B_OVER_A". 
+    y_pred is a list of dataframes where each dataframe contains one submission of weights. Every dataframe must have the same "SOURCE" and "TARGET" with each other and sorted the same way. 
+
+    Args:
+        y_true: Ground truth judgement between every pair of projects
+        y_pred: List of dataframes where each dataframe contains one submission of weights
+        
+    Returns:
+        float: Weights for the optimal linear combination of the submissions. 
+        
+    Raises:
+        TypeError: If inputs are not pandas DataFrames
+        ValueError: If inputs are invalid or missing required data
+    """
+    if not isinstance(y_true, pd.DataFrame):
+        raise TypeError("y_true must be a pandas DataFrame")
+    if not isinstance(y_pred, list):
+        raise TypeError("y_pred must be a list of pandas DataFrames")
+    if len(y_pred) == 0:
+        raise ValueError("No predictions provided")
+    
+    # Validate that all predictions have the same structure
+    first_pred = y_pred[0]
+    for i, pred in enumerate(y_pred[1:], 1):
+        if not isinstance(pred, pd.DataFrame):
+            raise TypeError(f"Prediction {i} is not a pandas DataFrame")
+        if not pred.equals(first_pred[['SOURCE', 'TARGET']].assign(WEIGHT=pred['WEIGHT'])):
+            raise ValueError("All predictions must have the same structure")
+
+    def split_cost(weights):
+        combined_logits = sum(w * df["WEIGHT"] for w, df in zip(weights, y_pred))
+        combined_df = y_pred[0].copy()
+        combined_df["WEIGHT"] = combined_logits
+        return pairwise_cost(y_true, combined_df)
+
+    # Initial guess: equal weights
+    initial_weights = [1 / len(y_pred)] * len(y_pred)
+
+    # Constraint: weights must sum to 1
+    constraints = ({'type': 'eq', 'fun': lambda w: sum(w) - 1})
+
+    # Bounds: weights must be between 0 and 1
+    bounds = [(0, 1)] * len(y_pred)
+
+    # Minimize the split cost
+    result = minimize(
+        split_cost,
+        initial_weights,
+        bounds=bounds,
+        constraints=constraints
+    )
+    return result.x
 
 # Dictionary mapping metric names to functions
 METRICS = {

@@ -7,7 +7,7 @@ import argparse
 import json
 import logging
 import os
-from typing import Any, Dict, Tuple, Union
+from typing import Any, Dict, Tuple, Union, List
 
 import numpy as np
 import pandas as pd
@@ -57,6 +57,73 @@ def load_data(
         raise ValueError("Ground truth data does not contain a 'split' column")
 
     return ground_truth_df, submission_df
+
+def load_process_data_deepfunding(ground_truth_path: str, submission_paths: str, custom_split: str = None) -> Tuple[pd.DataFrame, List[pd.DataFrame]]:
+    logger.debug(f"Loading ground truth data from {ground_truth_path}")
+    ground_truth_df = pd.read_csv(ground_truth_path)
+    
+    # Check required columns
+    if custom_split is not None and 'split' not in [col.lower() for col in ground_truth_df.columns]:
+        raise ValueError("Ground truth data does not contain a 'split' column")
+    cols = ["SOURCE_A", "SOURCE_B", "TARGET", "B_OVER_A"]
+    if custom_split is not None:
+        cols.append("SPLIT")
+    ground_truth_df.columns = cols
+    ground_truth_df["SOURCE_A"] = ground_truth_df["SOURCE_A"].astype(str)
+    ground_truth_df["SOURCE_A"] = ground_truth_df["SOURCE_A"].str.upper()
+    ground_truth_df["SOURCE_B"] = ground_truth_df["SOURCE_B"].astype(str)
+    ground_truth_df["SOURCE_B"] = ground_truth_df["SOURCE_B"].str.upper()
+    ground_truth_df["TARGET"] = ground_truth_df["TARGET"].astype(str)
+    ground_truth_df["TARGET"] = ground_truth_df["TARGET"].str.upper()
+    ground_truth_df["B_OVER_A"] = ground_truth_df["B_OVER_A"].astype(float)
+
+    # Filter out originality scores
+    ground_truth_df = ground_truth_df[ground_truth_df["TARGET"]!="originality"]
+
+    # Filter by split if specified
+    if custom_split is not None:
+        split_value = custom_split.lower()
+        if split_value not in ['public', 'private']:
+            raise ValueError("custom_split must be either 'public' or 'private'")
+        ground_truth_df = ground_truth_df[ground_truth_df['SPLIT'].str.lower() == split_value]
+        logger.debug(f"Filtered to {split_value} split, new shape: {ground_truth_df.shape}")
+
+    logger.debug(f"Ground truth shape: {ground_truth_df.shape}")
+
+    source_target = pd.concat(
+        [
+            ground_truth_df[["SOURCE_A", "TARGET"]].rename(columns={"SOURCE_A": "SOURCE"}),
+            ground_truth_df[["SOURCE_B", "TARGET"]].rename(columns={"SOURCE_B": "SOURCE"})
+        ],
+        axis=0
+    )
+    source_target = source_target.drop_duplicates()
+
+    # Load all submissions from their paths
+    logger.debug(f"Loading submissions from {submission_paths}")
+    submissions = []
+    with open(submission_paths) as infile:
+        for line in infile:
+            submission_df = pd.read_csv(line.strip())
+            submission_df.columns = ["SOURCE", "TARGET", "WEIGHT"]
+            submission_df["SOURCE"] = submission_df["SOURCE"].astype(str)
+            submission_df["SOURCE"] = submission_df["SOURCE"].str.upper()
+            submission_df["TARGET"] = submission_df["TARGET"].astype(str)
+            submission_df["TARGET"] = submission_df["TARGET"].str.upper()
+            submission_df["WEIGHT"] = submission_df["WEIGHT"].astype(float)
+            submission_df = source_target.merge(submission_df, on=["SOURCE", "TARGET"], how="left")
+            # Check for missing weights
+            if submission_df["WEIGHT"].isnull().any():
+                raise ValueError("Missing weights in submission data")
+            # Log-transform weights
+            zero_weights = submission_df["WEIGHT"] == 0
+            submission_df.loc[zero_weights, "WEIGHT"] = np.log(1e-18)
+            submission_df.loc[~zero_weights, "WEIGHT"] = np.log(submission_df.loc[~zero_weights, "WEIGHT"])
+            submission_df.sort_values(by=["TARGET","SOURCE"], inplace=True)
+            submissions.append(submission_df)
+    logger.debug(f"Number of submissions: {len(submissions)}")
+
+    return ground_truth_df, submissions
 
 
 def process_supervised_data(
@@ -255,6 +322,9 @@ def process_pairwise_data(
     submission_df["TARGET"] = submission_df["TARGET"].astype(str)
     submission_df["TARGET"] = submission_df["TARGET"].str.upper()
     submission_df["WEIGHT"] = submission_df["WEIGHT"].astype(float)
+    zero_weights = submission_df["WEIGHT"] == 0
+    submission_df.loc[zero_weights, "WEIGHT"] = np.log(1e-18)
+    submission_df.loc[~zero_weights, "WEIGHT"] = np.log(submission_df.loc[~zero_weights, "WEIGHT"])
 
     # Check for duplicate rows based on SOURCE and TARGET columns
     duplicate_rows = submission_df[submission_df.duplicated(subset=['SOURCE', 'TARGET'], keep=False)]
@@ -381,33 +451,37 @@ def main() -> None:
         else:
             logger.info(f"Using first {args.data_portion:.2%} of ground truth data")
 
+        metric_params = {}
         # Load data
-        ground_truth_df, submission_df = load_data(
-            args.ground_truth_path, args.submission_path, args.custom_split,
-            args.skip_column_check
-        )
-        if args.metric_name == "dcg":
-            if submission_df["RANK"].max() > len(ground_truth_df):
-                raise ValueError("Some ranks are too large.")
+        if args.metric_name == "deepfunding":
+            y_true, y_pred = load_process_data_deepfunding(
+                args.ground_truth_path, args.submission_path, args.custom_split
+            )
+        else:
+            ground_truth_df, submission_df = load_data(
+                args.ground_truth_path, args.submission_path, args.custom_split,
+                args.skip_column_check
+            )
+            if args.metric_name == "dcg":
+                if submission_df["RANK"].max() > len(ground_truth_df):
+                    raise ValueError("Some ranks are too large.")
 
         # Validate data
         if args.metric_name == "precision_at_k":
             y_true, y_pred = process_recommend_data(
                 ground_truth_df, submission_df, args.data_portion, args.after_split, args.custom_split
             )
-            metric_params = {"k": args.topk}
+            metric_params["k"] = args.topk
         elif args.metric_name == "pairwise_cost":
             y_true, y_pred = process_pairwise_data(
                 ground_truth_df, submission_df, args.custom_split
             )
-            metric_params = {}
         else:
             combined_df = process_supervised_data(
                 ground_truth_df, submission_df, args.data_portion, args.after_split, args.custom_split
             )
             y_true = combined_df["LABEL"].values
             y_pred = combined_df["PRED"].values
-            metric_params = {}
 
         # Compute metric
         score = compute_metric(y_true, y_pred, args.metric_name, metric_params)

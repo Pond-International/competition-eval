@@ -11,7 +11,8 @@ from evaluate import (
     process_supervised_data,
     process_recommend_data,
     compute_metric,
-    process_pairwise_data
+    process_pairwise_data,
+    load_process_data_deepfunding
 )
 
 # Test fixtures
@@ -615,3 +616,196 @@ def test_process_pairwise_data_case_insensitive(sample_pairwise_data):
     assert gt_processed.loc[0, "TARGET"] == "QUALITY"
     assert sub_processed.loc[0, "SOURCE"] == "SRC1"
     assert sub_processed.loc[0, "TARGET"] == "QUALITY"
+
+# Test load_process_data_deepfunding
+@pytest.fixture
+def sample_deepfunding_data():
+    # Create ground truth data
+    ground_truth = pd.DataFrame({
+        "SOURCE_A": ["a", "b", "c"],
+        "SOURCE_B": ["b", "c", "a"],
+        "TARGET": ["t", "t", "t"],
+        "B_OVER_A": [2.0, 1.5, 0.5]
+    })
+    
+    # Create submission data files
+    submission1 = pd.DataFrame({
+        "SOURCE": ["a", "b", "c"],
+        "TARGET": ["t", "t", "t"],
+        "WEIGHT": [1.0, 2.0, 1.5]
+    })
+    submission2 = pd.DataFrame({
+        "SOURCE": ["a", "b", "c"],
+        "TARGET": ["t", "t", "t"],
+        "WEIGHT": [1.2, 2.0, 3.0]
+    })
+    
+    # Create temporary files
+    with tempfile.NamedTemporaryFile(suffix='.csv', delete=False) as gt_file, \
+         tempfile.NamedTemporaryFile(suffix='.txt', delete=False) as sub_paths_file, \
+         tempfile.NamedTemporaryFile(suffix='.csv', delete=False) as sub1_file, \
+         tempfile.NamedTemporaryFile(suffix='.csv', delete=False) as sub2_file:
+        
+        # Write ground truth
+        ground_truth.to_csv(gt_file.name, index=False)
+        
+        # Write submissions
+        submission1.to_csv(sub1_file.name, index=False)
+        submission2.to_csv(sub2_file.name, index=False)
+        
+        # Write submission paths
+        with open(sub_paths_file.name, 'w') as f:
+            f.write(f"{sub1_file.name}\n{sub2_file.name}\n")
+            
+        yield gt_file.name, sub_paths_file.name
+        
+        # Cleanup
+        os.unlink(gt_file.name)
+        os.unlink(sub_paths_file.name)
+        os.unlink(sub1_file.name)
+        os.unlink(sub2_file.name)
+
+@pytest.fixture
+def sample_deepfunding_split_data():
+    # Create ground truth data with split
+    ground_truth = pd.DataFrame({
+        "SOURCE_A": ["a", "b", "c", "d"],
+        "SOURCE_B": ["b", "c", "a", "a"],
+        "TARGET": ["t", "t", "t", "t"],
+        "B_OVER_A": [2.0, 1.5, 0.5, 1.0],
+        "SPLIT": ["public", "public", "private", "private"]
+    })
+    
+    # Create submission data files
+    submission1 = pd.DataFrame({
+        "SOURCE": ["a", "b", "c", "d"],
+        "TARGET": ["t", "t", "t", "t"],
+        "WEIGHT": [1.0, 2.0, 1.5, 2.0]
+    })
+    submission2 = pd.DataFrame({
+        "SOURCE": ["a", "b", "c", "d"],
+        "TARGET": ["t", "t", "t", "t"],
+        "WEIGHT": [1.2, 2.0, 3.0, 1.5]
+    })
+    
+    # Create temporary files
+    with tempfile.NamedTemporaryFile(suffix='.csv', delete=False) as gt_file, \
+         tempfile.NamedTemporaryFile(suffix='.txt', delete=False) as sub_paths_file, \
+         tempfile.NamedTemporaryFile(suffix='.csv', delete=False) as sub1_file, \
+         tempfile.NamedTemporaryFile(suffix='.csv', delete=False) as sub2_file:
+        
+        # Write ground truth
+        ground_truth.to_csv(gt_file.name, index=False)
+        
+        # Write submissions
+        submission1.to_csv(sub1_file.name, index=False)
+        submission2.to_csv(sub2_file.name, index=False)
+        
+        # Write submission paths
+        with open(sub_paths_file.name, 'w') as f:
+            f.write(f"{sub1_file.name}\n{sub2_file.name}\n")
+            
+        yield gt_file.name, sub_paths_file.name
+        
+        # Cleanup
+        os.unlink(gt_file.name)
+        os.unlink(sub_paths_file.name)
+        os.unlink(sub1_file.name)
+        os.unlink(sub2_file.name)
+
+def test_load_process_data_deepfunding_valid(sample_deepfunding_data):
+    gt_path, sub_paths = sample_deepfunding_data
+    ground_truth, submissions = load_process_data_deepfunding(gt_path, sub_paths)
+    
+    # Check ground truth data
+    assert isinstance(ground_truth, pd.DataFrame)
+    assert set(ground_truth.columns) == {"SOURCE_A", "SOURCE_B", "TARGET", "B_OVER_A"}
+    assert ground_truth["SOURCE_A"].str.isupper().all()
+    assert ground_truth["SOURCE_B"].str.isupper().all()
+    assert ground_truth["TARGET"].str.isupper().all()
+    assert ground_truth["B_OVER_A"].dtype == float
+    
+    # Check submissions
+    assert isinstance(submissions, list)
+    assert len(submissions) == 2
+    for submission in submissions:
+        assert isinstance(submission, pd.DataFrame)
+        assert set(submission.columns) == {"SOURCE", "TARGET", "WEIGHT"}
+        assert submission["SOURCE"].str.isupper().all()
+        assert submission["TARGET"].str.isupper().all()
+        assert submission["WEIGHT"].dtype == float
+        assert not submission["WEIGHT"].isnull().any()
+
+def test_load_process_data_deepfunding_with_split(sample_deepfunding_split_data):
+    gt_path, sub_paths = sample_deepfunding_split_data
+    ground_truth, submissions = load_process_data_deepfunding(gt_path, sub_paths, custom_split="public")
+    
+    # Check that only public data is included
+    assert len(ground_truth) == 2  # Only public rows
+    assert ground_truth["B_OVER_A"].tolist() == [2.0, 1.5]  # Public values
+    
+    # Check that submissions only include sources from public split
+    for submission in submissions:
+        assert len(submission) == 3  # Only sources from public comparisons (a, b, c)
+        assert set(submission["SOURCE"].tolist()) == {"A", "B", "C"}
+
+def test_load_process_data_deepfunding_invalid_split(sample_deepfunding_split_data):
+    gt_path, sub_paths = sample_deepfunding_split_data
+    with pytest.raises(ValueError, match="custom_split must be either 'public' or 'private'"):
+        load_process_data_deepfunding(gt_path, sub_paths, custom_split="invalid")
+
+def test_load_process_data_deepfunding_missing_weights():
+    # Create ground truth data
+    ground_truth = pd.DataFrame({
+        "SOURCE_A": ["a", "b"],
+        "SOURCE_B": ["b", "c"],
+        "TARGET": ["t", "t"],
+        "B_OVER_A": [2.0, 1.5]
+    })
+    
+    # Create submission with missing source
+    submission = pd.DataFrame({
+        "SOURCE": ["a", "b"],  # Missing 'c'
+        "TARGET": ["t", "t"],
+        "WEIGHT": [1.0, 2.0]
+    })
+    
+    # Create temporary files
+    with tempfile.NamedTemporaryFile(suffix='.csv', delete=False) as gt_file, \
+         tempfile.NamedTemporaryFile(suffix='.txt', delete=False) as sub_paths_file, \
+         tempfile.NamedTemporaryFile(suffix='.csv', delete=False) as sub_file:
+        
+        ground_truth.to_csv(gt_file.name, index=False)
+        submission.to_csv(sub_file.name, index=False)
+        
+        with open(sub_paths_file.name, 'w') as f:
+            f.write(f"{sub_file.name}\n")
+        
+        with pytest.raises(ValueError, match="Missing weights in submission data"):
+            load_process_data_deepfunding(gt_file.name, sub_paths_file.name)
+        
+        os.unlink(gt_file.name)
+        os.unlink(sub_paths_file.name)
+        os.unlink(sub_file.name)
+
+def test_load_process_data_deepfunding_case_insensitive(sample_deepfunding_data):
+    gt_path, sub_paths = sample_deepfunding_data
+    
+    # Load the files
+    ground_truth = pd.read_csv(gt_path)
+    ground_truth.loc[0, "SOURCE_A"] = ground_truth.loc[0, "SOURCE_A"].lower()
+    ground_truth.loc[1, "SOURCE_B"] = ground_truth.loc[1, "SOURCE_B"].lower()
+    ground_truth.loc[0, "TARGET"] = ground_truth.loc[0, "TARGET"].lower()
+    ground_truth.to_csv(gt_path, index=False)
+    
+    # Load and process
+    ground_truth, submissions = load_process_data_deepfunding(gt_path, sub_paths)
+    
+    # Check case conversion
+    assert ground_truth["SOURCE_A"].str.isupper().all()
+    assert ground_truth["SOURCE_B"].str.isupper().all()
+    assert ground_truth["TARGET"].str.isupper().all()
+    
+    for submission in submissions:
+        assert submission["SOURCE"].str.isupper().all()
+        assert submission["TARGET"].str.isupper().all()
