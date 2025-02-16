@@ -63,7 +63,7 @@ python evaluate.py data/123_ground_truth.parquet data/123_1_dev1.csv rmse --cust
 python evaluate.py data/pairwise_ground_truth.parquet data/pairwise_submission.csv pairwise_cost
 
 # Optimize weights for combining multiple submissions
-python evaluate.py data/pairwise_ground_truth.parquet data/submission_paths.txt deepfunding
+python evaluate.py data/pairwise_ground_truth.parquet data/submission_paths.csv deepfunding
 ```
 
 Example pairwise ground truth format:
@@ -85,12 +85,13 @@ src3,originality,4.0
 ```
 
 Example submission paths file format for deepfunding metric:
-```text
+```csv
+path
 /path/to/submission1.csv
 /path/to/submission2.csv
 /path/to/submission3.csv
 ```
-Each submission file should follow the pairwise submission format above.
+Each submission file should follow the pairwise submission format above. The submission paths file must be a CSV file with a 'path' column containing the paths to each submission file.
 
 Output:
 

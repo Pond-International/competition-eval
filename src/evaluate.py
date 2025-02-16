@@ -101,26 +101,26 @@ def load_process_data_deepfunding(ground_truth_path: str, submission_paths: str,
 
     # Load all submissions from their paths
     logger.debug(f"Loading submissions from {submission_paths}")
+    all_submissions = pd.read_csv(submission_paths)
     submissions = []
-    with open(submission_paths) as infile:
-        for line in infile:
-            submission_df = pd.read_csv(line.strip())
-            submission_df.columns = ["SOURCE", "TARGET", "WEIGHT"]
-            submission_df["SOURCE"] = submission_df["SOURCE"].astype(str)
-            submission_df["SOURCE"] = submission_df["SOURCE"].str.upper()
-            submission_df["TARGET"] = submission_df["TARGET"].astype(str)
-            submission_df["TARGET"] = submission_df["TARGET"].str.upper()
-            submission_df["WEIGHT"] = submission_df["WEIGHT"].astype(float)
-            submission_df = source_target.merge(submission_df, on=["SOURCE", "TARGET"], how="left")
-            # Check for missing weights
-            if submission_df["WEIGHT"].isnull().any():
-                raise ValueError("Missing weights in submission data")
-            # Log-transform weights
-            zero_weights = submission_df["WEIGHT"] == 0
-            submission_df.loc[zero_weights, "WEIGHT"] = np.log(1e-18)
-            submission_df.loc[~zero_weights, "WEIGHT"] = np.log(submission_df.loc[~zero_weights, "WEIGHT"])
-            submission_df.sort_values(by=["TARGET","SOURCE"], inplace=True)
-            submissions.append(submission_df)
+    for submission_path in all_submissions["path"]:
+        submission_df = pd.read_csv(submission_path.strip())
+        submission_df.columns = ["SOURCE", "TARGET", "WEIGHT"]
+        submission_df["SOURCE"] = submission_df["SOURCE"].astype(str)
+        submission_df["SOURCE"] = submission_df["SOURCE"].str.upper()
+        submission_df["TARGET"] = submission_df["TARGET"].astype(str)
+        submission_df["TARGET"] = submission_df["TARGET"].str.upper()
+        submission_df["WEIGHT"] = submission_df["WEIGHT"].astype(float)
+        submission_df = source_target.merge(submission_df, on=["SOURCE", "TARGET"], how="left")
+        # Check for missing weights
+        if submission_df["WEIGHT"].isnull().any():
+            raise ValueError("Missing weights in submission data")
+        # Log-transform weights
+        zero_weights = submission_df["WEIGHT"] == 0
+        submission_df.loc[zero_weights, "WEIGHT"] = np.log(1e-18)
+        submission_df.loc[~zero_weights, "WEIGHT"] = np.log(submission_df.loc[~zero_weights, "WEIGHT"])
+        submission_df.sort_values(by=["TARGET","SOURCE"], inplace=True)
+        submissions.append(submission_df)
     logger.debug(f"Number of submissions: {len(submissions)}")
 
     return ground_truth_df, submissions

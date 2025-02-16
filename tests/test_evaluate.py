@@ -642,7 +642,7 @@ def sample_deepfunding_data():
     
     # Create temporary files
     with tempfile.NamedTemporaryFile(suffix='.csv', delete=False) as gt_file, \
-         tempfile.NamedTemporaryFile(suffix='.txt', delete=False) as sub_paths_file, \
+         tempfile.NamedTemporaryFile(suffix='.csv', delete=False) as sub_paths_file, \
          tempfile.NamedTemporaryFile(suffix='.csv', delete=False) as sub1_file, \
          tempfile.NamedTemporaryFile(suffix='.csv', delete=False) as sub2_file:
         
@@ -653,9 +653,8 @@ def sample_deepfunding_data():
         submission1.to_csv(sub1_file.name, index=False)
         submission2.to_csv(sub2_file.name, index=False)
         
-        # Write submission paths
-        with open(sub_paths_file.name, 'w') as f:
-            f.write(f"{sub1_file.name}\n{sub2_file.name}\n")
+        # Write submission paths as CSV
+        pd.DataFrame({'path': [sub1_file.name, sub2_file.name]}).to_csv(sub_paths_file.name, index=False)
             
         yield gt_file.name, sub_paths_file.name
         
@@ -690,7 +689,7 @@ def sample_deepfunding_split_data():
     
     # Create temporary files
     with tempfile.NamedTemporaryFile(suffix='.csv', delete=False) as gt_file, \
-         tempfile.NamedTemporaryFile(suffix='.txt', delete=False) as sub_paths_file, \
+         tempfile.NamedTemporaryFile(suffix='.csv', delete=False) as sub_paths_file, \
          tempfile.NamedTemporaryFile(suffix='.csv', delete=False) as sub1_file, \
          tempfile.NamedTemporaryFile(suffix='.csv', delete=False) as sub2_file:
         
@@ -701,9 +700,8 @@ def sample_deepfunding_split_data():
         submission1.to_csv(sub1_file.name, index=False)
         submission2.to_csv(sub2_file.name, index=False)
         
-        # Write submission paths
-        with open(sub_paths_file.name, 'w') as f:
-            f.write(f"{sub1_file.name}\n{sub2_file.name}\n")
+        # Write submission paths as CSV
+        pd.DataFrame({'path': [sub1_file.name, sub2_file.name]}).to_csv(sub_paths_file.name, index=False)
             
         yield gt_file.name, sub_paths_file.name
         
@@ -772,14 +770,14 @@ def test_load_process_data_deepfunding_missing_weights():
     
     # Create temporary files
     with tempfile.NamedTemporaryFile(suffix='.csv', delete=False) as gt_file, \
-         tempfile.NamedTemporaryFile(suffix='.txt', delete=False) as sub_paths_file, \
+         tempfile.NamedTemporaryFile(suffix='.csv', delete=False) as sub_paths_file, \
          tempfile.NamedTemporaryFile(suffix='.csv', delete=False) as sub_file:
         
         ground_truth.to_csv(gt_file.name, index=False)
         submission.to_csv(sub_file.name, index=False)
         
-        with open(sub_paths_file.name, 'w') as f:
-            f.write(f"{sub_file.name}\n")
+        # Write submission paths as CSV
+        pd.DataFrame({'path': [sub_file.name]}).to_csv(sub_paths_file.name, index=False)
         
         with pytest.raises(ValueError, match="Missing weights in submission data"):
             load_process_data_deepfunding(gt_file.name, sub_paths_file.name)
