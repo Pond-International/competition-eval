@@ -78,7 +78,7 @@ def load_process_data_deepfunding(ground_truth_path: str, submission_paths: str,
     ground_truth_df["B_OVER_A"] = ground_truth_df["B_OVER_A"].astype(float)
 
     # Filter out originality scores
-    ground_truth_df = ground_truth_df[ground_truth_df["TARGET"]!="originality"]
+    ground_truth_df = ground_truth_df[ground_truth_df["TARGET"]!="ORIGINALITY"]
 
     # Filter by split if specified
     if custom_split is not None:
