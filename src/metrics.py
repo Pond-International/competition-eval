@@ -218,7 +218,7 @@ def pairwise_cost(
         raise ValueError("Missing weights in submission data")
         
     # Cost on pairs where TARGET != "originality"
-    y_true_pair = y_true[y_true["TARGET"]!="originality"]
+    y_true_pair = y_true[y_true["TARGET"]!="ORIGINALITY"]
     combined_df = y_true_pair.merge(
         y_pred, 
         left_on=["SOURCE_A", "TARGET"], 
@@ -238,11 +238,13 @@ def pairwise_cost(
     combined_df.rename(columns={"WEIGHT": "WEIGHT_B"}, inplace=True)
     
     cost_pair = ((combined_df["WEIGHT_B"] - combined_df["WEIGHT_A"] - combined_df["B_OVER_A"])**2).sum()
+    len_pair = len(combined_df)
 
     # Cost on pairs where TARGET == "originality"
-    y_true_origin = y_true[y_true["TARGET"]=="originality"]
+    y_true_origin = y_true[y_true["TARGET"]=="ORIGINALITY"]
     if len(y_true_origin) == 0:
         cost_origin = 0
+        len_origin = 0
     else:
         combined_df = y_true_origin.merge(
             y_pred, 
@@ -252,8 +254,9 @@ def pairwise_cost(
         if combined_df['WEIGHT'].isnull().any():
             raise ValueError("Missing weights in submission data")
         cost_origin = ((combined_df["WEIGHT"] - combined_df["B_OVER_A"])**2).sum()
+        len_origin = len(combined_df)
 
-    return float(cost_pair) + float(cost_origin)
+    return (float(cost_pair) + float(cost_origin))/(len_pair + len_origin)
 
 def deepfunding(
     y_true: pd.DataFrame, 
