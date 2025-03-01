@@ -322,6 +322,10 @@ def process_pairwise_data(
     submission_df["TARGET"] = submission_df["TARGET"].astype(str)
     submission_df["TARGET"] = submission_df["TARGET"].str.upper()
     submission_df["WEIGHT"] = submission_df["WEIGHT"].astype(float)
+    # Check if all WEIGHT values are non-negative
+    if (submission_df["WEIGHT"] < 0).any():
+        raise ValueError("All weight values in the submission must be non-negative.")
+
     zero_weights = submission_df["WEIGHT"] == 0
     submission_df.loc[zero_weights, "WEIGHT"] = np.log(1e-18)
     submission_df.loc[~zero_weights, "WEIGHT"] = np.log(submission_df.loc[~zero_weights, "WEIGHT"])
