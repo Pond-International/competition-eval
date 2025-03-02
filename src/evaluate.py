@@ -316,6 +316,15 @@ def process_pairwise_data(
     ground_truth_df["TARGET"] = ground_truth_df["TARGET"].str.upper()
     ground_truth_df["B_OVER_A"] = ground_truth_df["B_OVER_A"].astype(float)
 
+    # Check if submission_df has the correct columns
+    sample_submission = pd.read_csv("sample_submission_deepfunding.csv")
+    if not np.array_equal(sample_submission.columns, submission_df.columns):
+        raise ValueError("Column names mismatch in submission")
+    sample_submission = sample_submission.drop(columns=["weight"])
+    sample_submission = sample_submission.merge(submission_df, on=["repo", "parent"], how="left")
+    if sample_submission['weight'].isnull().any():
+        raise ValueError("Missing rows in submission data")
+
     submission_df.columns = ["SOURCE", "TARGET", "WEIGHT"]
     submission_df["SOURCE"] = submission_df["SOURCE"].astype(str)
     submission_df["SOURCE"] = submission_df["SOURCE"].str.upper()
