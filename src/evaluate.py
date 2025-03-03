@@ -13,6 +13,8 @@ import numpy as np
 import pandas as pd
 from dotenv import load_dotenv
 from metrics import METRICS
+from urllib.request import urlopen
+from io import StringIO
 
 # Configure logging
 logging.basicConfig(
@@ -316,8 +318,15 @@ def process_pairwise_data(
     ground_truth_df["TARGET"] = ground_truth_df["TARGET"].str.upper()
     ground_truth_df["B_OVER_A"] = ground_truth_df["B_OVER_A"].astype(float)
 
-    # Check if submission_df has the correct columns
-    sample_submission = pd.read_csv("sample_submission_deepfunding.csv")
+    # Download sample submission from S3
+    try:
+        s3_url = "https://pond-open-files.s3.us-east-1.amazonaws.com/competition_2564617/sample_submission_deepfunding.csv"
+        with urlopen(s3_url) as response:
+            sample_submission_content = response.read().decode('utf-8')
+        sample_submission = pd.read_csv(StringIO(sample_submission_content))
+    except Exception as e:
+        raise ValueError(f"Failed to download sample submission file: {str(e)}")
+
     if not np.array_equal(sample_submission.columns, submission_df.columns):
         raise ValueError("Column names mismatch in submission")
     sample_submission = sample_submission.drop(columns=["weight"])
