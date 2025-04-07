@@ -32,6 +32,7 @@ Arguments:
 - `--data-portion`: Portion of ground truth data to use (float between 0 and 1, default: 1.0)
 - `--after-split`: If set, use remaining (1-portion) of data after the split point
 - `--custom-split`: Customized split ('public' or 'private') of ground truth data to use for evaluation. Cannot be used with `--data-portion`. If None, no split is applied. Default: None
+- `--skip-column-check`: If set, skip checking whether column names match between ground truth and submission files
 
 Available metrics:
 - `accuracy`: Classification accuracy
@@ -41,6 +42,8 @@ Available metrics:
 - `dcg`: Discounted Cumulative Gain for ranking tasks (evaluates both the rank position and relevance of recommendations)
 - `auc`: Area Under the Curve for binary classification tasks
 - `mse`: Mean squared error
+- `pairwise_cost`: Evaluates pairwise preferences between items. Ground truth should contain columns SOURCE_A, SOURCE_B, TARGET, and B_OVER_A (indicating how much B is preferred over A). Submission should contain SOURCE, TARGET, and WEIGHT columns. The metric computes how well the predicted weights match the ground truth preferences.
+- `deepfunding`: Optimizes weights for combining multiple submissions to minimize pairwise preference costs. Ground truth format is the same as `pairwise_cost`. Instead of a single submission file, takes a text file containing paths to multiple submission files, each following the same format as `pairwise_cost` submissions. Returns optimized weights that minimize the overall cost when combining predictions from all submissions.
 
 Example:
 ```bash
@@ -55,7 +58,40 @@ python evaluate.py data/123_ground_truth.parquet data/123_1_dev1.csv rmse --data
 
 # Evaluate using public split
 python evaluate.py data/123_ground_truth.parquet data/123_1_dev1.csv rmse --custom-split public
+
+# Evaluate pairwise preferences
+python evaluate.py data/pairwise_ground_truth.parquet data/pairwise_submission.csv pairwise_cost
+
+# Optimize weights for combining multiple submissions
+python evaluate.py data/pairwise_ground_truth.parquet data/submission_paths.csv deepfunding
 ```
+
+Example pairwise ground truth format:
+```csv
+SOURCE_A,SOURCE_B,TARGET,B_OVER_A
+src1,src2,quality,1.5
+src2,src3,quality,0.8
+src1,src3,originality,2.0
+```
+
+Example pairwise submission format:
+```csv
+SOURCE,TARGET,WEIGHT
+src1,quality,3.0
+src2,quality,4.5
+src3,quality,3.6
+src1,originality,2.0
+src3,originality,4.0
+```
+
+Example submission paths file format for deepfunding metric:
+```csv
+path
+/path/to/submission1.csv
+/path/to/submission2.csv
+/path/to/submission3.csv
+```
+Each submission file should follow the pairwise submission format above. The submission paths file must be a CSV file with a 'path' column containing the paths to each submission file.
 
 Output:
 
