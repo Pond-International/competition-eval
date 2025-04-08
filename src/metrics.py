@@ -8,33 +8,7 @@ import pandas as pd
 from scipy.optimize import minimize
 from sklearn.metrics import accuracy_score, roc_auc_score
 
-
-def _validate_numeric_inputs(y_true: np.ndarray, y_pred: np.ndarray) -> None:
-    """Validate input arrays.
-    
-    Args:
-        y_true: Ground truth values
-        y_pred: Predicted values
-        
-    Raises:
-        ValueError: If inputs are invalid
-    """
-    if not isinstance(y_true, np.ndarray) or not isinstance(y_pred, np.ndarray):
-        raise ValueError("Inputs must be numpy arrays")
-        
-    if len(y_true) == 0 or len(y_pred) == 0:
-        raise ValueError("Input data cannot be empty")
-        
-    if len(y_true) != len(y_pred):
-        raise ValueError("Ground truth and predictions must have the same length")
-        
-    # Check for non-numeric values first
-    if not np.issubdtype(y_true.dtype, np.number) or not np.issubdtype(y_pred.dtype, np.number):
-        raise ValueError("Ground truth and predictions must contain only numeric values")
-        
-    # Only check for NaN if arrays are numeric
-    if np.any(np.isnan(y_true)) or np.any(np.isnan(y_pred)):
-        raise ValueError("Predictions cannot contain missing values")
+import validators
 
 
 def accuracy(y_true: np.ndarray, y_pred: np.ndarray) -> float:
@@ -50,7 +24,7 @@ def accuracy(y_true: np.ndarray, y_pred: np.ndarray) -> float:
     Raises:
         ValueError: If inputs are invalid
     """
-    _validate_numeric_inputs(y_true, y_pred)
+    validators.validate_numeric_inputs(y_true, y_pred)
     return float(accuracy_score(y_true, y_pred))
 
 def root_mean_squared_error(y_true: np.ndarray, y_pred: np.ndarray) -> float:
@@ -66,7 +40,7 @@ def root_mean_squared_error(y_true: np.ndarray, y_pred: np.ndarray) -> float:
     Raises:
         ValueError: If inputs are invalid
     """
-    _validate_numeric_inputs(y_true, y_pred)
+    validators.validate_numeric_inputs(y_true, y_pred)
     return np.sqrt(np.mean((y_true - y_pred) ** 2))
 
 def mean_squared_error(y_true: np.ndarray, y_pred: np.ndarray) -> float:
@@ -82,7 +56,7 @@ def mean_squared_error(y_true: np.ndarray, y_pred: np.ndarray) -> float:
     Raises:
         ValueError: If inputs are invalid
     """
-    _validate_numeric_inputs(y_true, y_pred)
+    validators.validate_numeric_inputs(y_true, y_pred)
     return np.mean((y_true - y_pred) ** 2)
 
 def weighted_mean_squared_error(
@@ -101,7 +75,7 @@ def weighted_mean_squared_error(
     Raises:
         ValueError: If inputs are invalid
     """
-    _validate_numeric_inputs(y_true, y_pred)
+    validators.validate_numeric_inputs(y_true, y_pred)
     return np.sqrt(np.mean(np.abs(y_true) * (y_true - y_pred)**2))
 
 def auc(y_true: np.ndarray, y_pred: np.ndarray) -> float:
@@ -117,20 +91,9 @@ def auc(y_true: np.ndarray, y_pred: np.ndarray) -> float:
     Raises:
         ValueError: If inputs are invalid
     """
-    _validate_numeric_inputs(y_true, y_pred)
-    if not np.all((y_pred >= 0) & (y_pred <= 1)):
-        raise ValueError("Predictions must be between 0 and 1")
+    validators.validate_numeric_inputs(y_true, y_pred)
+    validators.validate_value_range(y_pred, 0, 1)
     return float(roc_auc_score(y_true, y_pred))
-
-def _validate_rec_inputs(y_true: pd.DataFrame, y_pred: pd.DataFrame) -> None:
-    if not isinstance(y_true, pd.DataFrame) or not isinstance(y_pred, pd.DataFrame):
-        raise ValueError("Inputs must be pandas DataFrames")
-        
-    if len(y_true) == 0 or len(y_pred) == 0:
-        raise ValueError("Input data cannot be empty")
-        
-    if len(set(y_true["ADDRESS"]) - set(y_pred["ADDRESS"])) > 0:
-        raise ValueError("Missing recommendations for some addresses")
         
 def precision_at_k(
     y_true: pd.DataFrame, 
@@ -153,7 +116,7 @@ def precision_at_k(
     if not isinstance(k, int) or k <= 0:
         raise ValueError("k must be a positive integer")
         
-    _validate_rec_inputs(y_true, y_pred)
+    validators.validate_rec_inputs(y_true, y_pred)
     
     y_pred["score"] = 1
     combined_df = y_true.merge(y_pred, on=["ADDRESS", "REC"], how="left")
@@ -178,7 +141,7 @@ def discounted_cumulative_gain(
     Raises:
         ValueError: If inputs are invalid
     """
-    _validate_numeric_inputs(true_relavance, ranks)
+    validators.validate_numeric_inputs(true_relavance, ranks)
     if not np.issubdtype(ranks.dtype, np.integer) or np.any(ranks <= 0):
         raise ValueError("Ranks must be positive integers")
     if len(ranks) != len(set(ranks)):

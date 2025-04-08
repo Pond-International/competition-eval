@@ -33,7 +33,8 @@ def test_pairwise_cost_valid(valid_pairwise_data):
     cost = pairwise_cost(y_true, y_pred)
     assert isinstance(cost, float)
     assert cost >= 0
-    expected_cost = 1.0 + 0.25 + 6.25  # Sum of squared differences
+    sum_squared_diff = 1.0 + 0.25 + 6.25  # Sum of squared differences
+    expected_cost = sum_squared_diff / 3  # Average of squared differences (3 pairs)
     assert np.isclose(cost, expected_cost, rtol=1e-10)
 
 def test_pairwise_cost_empty():
