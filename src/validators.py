@@ -112,7 +112,7 @@ def validate_numeric_columns(df: pd.DataFrame, columns: List[str]) -> bool:
 
 
 def validate_value_range(
-    x: np.ndarray, min_val: float, max_val: float
+    x: np.ndarray, min_val: float = float('-inf'), max_val: float = float('inf')
 ) -> bool:
     """Validate that values in array are within specified range.
 
