@@ -897,3 +897,112 @@ class DeepfundingEvaluator(BaseEvaluator):
             Dict[str, Any]: Default parameters for the metric
         """
         return {}
+
+
+@EvaluatorRegistry.register
+class GitcoinEvaluator(RMSEEvaluator):
+    """Evaluator for root mean squared error metric."""
+
+    def __init__(self):
+        """Initialize the evaluator."""
+        self.name = "gitcoin"
+        self.description = "Evaluator for Gitcoin funding prediction"
+
+    def validate(
+        self,
+        ground_truth_df: pd.DataFrame,
+        submission_df: pd.DataFrame,
+        custom_split: Optional[str] = None,
+    ) -> bool:
+        """Validate input data.
+
+        Args:
+            ground_truth_df: Ground truth dataframe
+            submission_df: Submission dataframe
+            custom_split: Optional split type ('public' or 'private') to filter data
+
+        Returns:
+            bool: True if validation passes
+
+        Raises:
+            ValueError: If validation fails
+        """
+        # Check required columns
+        if custom_split:
+            validators.validate_split_column(ground_truth_df, custom_split)
+
+        expected_cols = ["PROJECT_ID", "PROJECT", "ROUND", "AMOUNT"]
+        if submission_df.shape[1] == 4:
+            validators.validate_column_names(
+                submission_df, expected_cols, ignore_case=False
+            )
+        else:
+            validators.validate_column_names(
+                submission_df, expected_cols[1:], ignore_case=False
+            )
+        # Check for duplicate addresses in submission
+        validators.validate_no_duplicates(submission_df, columns=["PROJECT", "ROUND"])
+
+        return True
+
+    def transform(
+        self,
+        ground_truth_df: pd.DataFrame,
+        submission_df: pd.DataFrame,
+        data_portion: float = 1.0,
+        after_split: bool = False,
+        custom_split: Optional[str] = None,
+    ) -> Tuple[np.ndarray, np.ndarray]:
+        """Transform input data for metric computation.
+
+        Args:
+            ground_truth_df: Ground truth dataframe
+            submission_df: Submission dataframe
+            data_portion: Portion of data to use (between 0 and 1)
+            after_split: If True, use remaining portion after split point
+            custom_split: Optional split type ('public' or 'private') to filter data
+
+        Returns:
+            Tuple of (y_true, y_pred) as numpy arrays
+        """
+        if after_split and data_portion >= 1:
+            raise ValueError(
+                "data_portion must be less than 1 when after_split is enabled"
+            )
+        if not 0 < data_portion <= 1:
+            raise ValueError("data_portion must be between 0 and 1")
+
+        # Round name to ID mapping
+        round_df = pd.DataFrame({
+            "ROUND": ["WEB3 INFRA", "DEV TOOLING", "DAPPS & APPS"],
+            "ROUND_ID": ["865", "863", "867"]})
+        submission_df = submission_df.merge(round_df, on="ROUND")
+
+        # project name to ID mapping
+        if "PROJECT_ID" not in submission_df.columns:
+            project_df = pd.read_csv("projects_Apr_1.csv", usecols=["PROJECT_ID", "PROJECT"])
+            project_df.drop_duplicates(inplace=True)
+            submission_df = submission_df.join(project_df, on="PROJECT")
+
+        # Group by PROJECT_ID and ROUND_ID and normalize amounts within each group
+        submission_df["AMOUNT"] = pd.to_numeric(submission_df["AMOUNT"])
+        submission_df_grouped = submission_df.groupby(["PROJECT_ID", "ROUND_ID"])
+        submission_df["PRED"] = submission_df_grouped["AMOUNT"].transform(
+            lambda x: x / x.sum() if x.sum() > 0 else 0
+        )
+
+        ground_truth_df["AMOUNT"] = pd.to_numeric(ground_truth_df["AMOUNT"])
+        ground_truth_df_grouped = ground_truth_df.groupby(["PROJECT_ID", "ROUND_ID"])
+        ground_truth_df["LABEL"] = ground_truth_df_grouped["AMOUNT"].transform(
+            lambda x: x / x.sum() if x.sum() > 0 else 0
+        )
+
+        # Merge data
+        df = ground_truth_df.merge(submission_df, how="left", on=["PROJECT_ID", "ROUND_ID"])
+
+        # Extract arrays
+        y_true = df["LABEL"].values
+        y_pred = df["PRED"].values
+
+        return y_true, y_pred
+

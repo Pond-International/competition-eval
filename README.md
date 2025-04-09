@@ -44,6 +44,7 @@ Available metrics:
 - `mse`: Mean squared error
 - `pairwise_cost`: Evaluates pairwise preferences between items. Ground truth should contain columns SOURCE_A, SOURCE_B, TARGET, and B_OVER_A (indicating how much B is preferred over A). Submission should contain SOURCE, TARGET, and WEIGHT columns. The metric computes how well the predicted weights match the ground truth preferences.
 - `deepfunding`: Optimizes weights for combining multiple submissions to minimize pairwise preference costs. Ground truth format is the same as `pairwise_cost`. Instead of a single submission file, takes a text file containing paths to multiple submission files, each following the same format as `pairwise_cost` submissions. Returns optimized weights that minimize the overall cost when combining predictions from all submissions.
+- `gitcoin`: Evaluates predictions for Gitcoin funding distribution. Ground truth should contain columns PROJECT_ID, ROUND_ID, and AMOUNT. Submission should contain PROJECT, ROUND, and AMOUNT columns (PROJECT_ID is optional). The metric normalizes funding amounts within each round and computes RMSE between predicted and actual normalized distributions.
 
 Example:
 ```bash
@@ -67,6 +68,9 @@ python evaluate.py data/pairwise_ground_truth.parquet data/pairwise_submission.c
 
 # Optimize weights for combining multiple submissions
 python evaluate.py data/pairwise_ground_truth.parquet data/submission_paths.csv deepfunding
+
+# Evaluate Gitcoin funding predictions
+python evaluate.py data/gitcoin_ground_truth.parquet data/gitcoin_submission.csv gitcoin
 ```
 
 Example pairwise ground truth format:
@@ -95,6 +99,23 @@ path
 /path/to/submission3.csv
 ```
 Each submission file should follow the pairwise submission format above. The submission paths file must be a CSV file with a 'path' column containing the paths to each submission file.
+
+Example Gitcoin ground truth format:
+```csv
+PROJECT_ID,ROUND_ID,AMOUNT
+123,865,1000
+456,865,2000
+789,863,1500
+```
+
+Example Gitcoin submission format:
+```csv
+PROJECT,ROUND,AMOUNT
+Project A,WEB3 INFRA,900
+Project B,WEB3 INFRA,2100
+Project C,DEV TOOLING,1600
+```
+The evaluator normalizes amounts within each round to calculate the funding distribution percentages, then computes RMSE between predicted and actual distributions. The evaluator requires a `projects_Apr_1.csv` file with PROJECT_ID and PROJECT columns for mapping if PROJECT_ID is not provided in the submission.
 
 Output:
 
