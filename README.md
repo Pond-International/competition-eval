@@ -21,18 +21,18 @@ cp .env.example .env
 The `evaluate.py` script compares predictions against ground truth using various metrics:
 
 ```bash
-python evaluate.py <ground_truth_file> <submission_file> <metric> [--topk K] [--data-portion PORTION] [--after-split] [--custom-split SPLIT_TYPE]
+python evaluate.py <ground_truth_file> <submission_file> <metric> [--data-portion PORTION] [--after-split] [--custom-split SPLIT_TYPE] [additional metric-specific arguments]
 ```
 
 Arguments:
 - `ground_truth_file`: Path to ground truth parquet or csv file. Can be local path or S3 URL.
 - `submission_file`: Path to submission CSV file. Can be local path or S3 URL.
 - `metric`: Metric to compute (see Available Metrics below)
-- `--topk`: Number of top recommendations to consider for precision_at_k metric (default: 5)
 - `--data-portion`: Portion of ground truth data to use (float between 0 and 1, default: 1.0)
 - `--after-split`: If set, use remaining (1-portion) of data after the split point
 - `--custom-split`: Customized split ('public' or 'private') of ground truth data to use for evaluation. Cannot be used with `--data-portion`. If None, no split is applied. Default: None
-- `--skip-column-check`: If set, skip checking whether column names match between ground truth and submission files
+- `--skip-column-check`: Deprecated. Column checks are now implemented in the evaluators. Kept for backward compatibility.
+- Additional metric-specific arguments can be passed in either `--key=value` or `--key value` format
 
 Available metrics:
 - `accuracy`: Classification accuracy
@@ -58,6 +58,9 @@ python evaluate.py data/123_ground_truth.parquet data/123_1_dev1.csv rmse --data
 
 # Evaluate using public split
 python evaluate.py data/123_ground_truth.parquet data/123_1_dev1.csv rmse --custom-split public
+
+# Evaluate precision at k with custom k value
+python evaluate.py data/123_ground_truth.parquet data/123_1_dev1.csv precision_at_k --topk=10
 
 # Evaluate pairwise preferences
 python evaluate.py data/pairwise_ground_truth.parquet data/pairwise_submission.csv pairwise_cost
@@ -109,6 +112,20 @@ Evaluation results are printed to the console in the following format:
 
 ## Development
 
+### Project Organization
+
+The project is organized into several key modules:
+
+- **metrics.py**: Contains the mathematical functions for calculating metrics. These are the core algorithms that perform the actual metric calculations.
+
+- **evaluators.py**: Contains evaluator classes that wrap around the math metrics. Evaluators handle data loading, validation, and transformation before applying the metric calculations. Even for the same mathematical metric, there could be different evaluators depending on how the data needs to be transformed. Evaluators are the "metrics" used in competitions.
+
+- **evaluate.py**: The main script that processes command-line arguments and calls the appropriate evaluator.
+
+- **validators.py**: Contains validation functions used by evaluators to ensure data integrity.
+
+Parameters for metrics are passed as extra arguments in the command line. The evaluator parses these arguments and passes them to the metric calculation functions. Arguments can be specified in either `--key=value` or `--key value` format.
+
 ### General Procedure
 1. Create a new branch for your changes
 2. Make changes and add new tests into the `tests/` directory. `Pytest` is used for testing.
@@ -125,9 +142,16 @@ pytest tests/
 ```
 
 ### Adding New Metrics
-1. Add the metric function to `metrics.py`
-2. Add corresponding unit tests in `tests/test_metrics.py`
-3. Register the metric in the `METRICS` dictionary in `metrics.py`
+1. Add the mathematical metric function to `metrics.py`
+2. Create a new evaluator class in `evaluators.py` that extends `BaseEvaluator`
+3. Implement the required methods in your evaluator:
+   - `transform()`: Prepare the data for metric calculation
+   - `compute_metric()`: Apply the metric calculation
+   - `get_default_params()`: Define default parameters
+   - `validate()`: (Optional) Overwrite the default validation logic in the BaseEvaluator class
+   - `read_data()`: (Optional) Overwrite the default data reading logic in the BaseEvaluator class
+4. Register your evaluator in the `EvaluatorRegistry`
+5. Add corresponding unit tests in `tests/test_metrics.py` and `tests/test_evaluators.py`
 
 
 
