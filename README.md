@@ -21,18 +21,18 @@ cp .env.example .env
 The `evaluate.py` script compares predictions against ground truth using various metrics:
 
 ```bash
-python evaluate.py <ground_truth_file> <submission_file> <metric> [--topk K] [--data-portion PORTION] [--after-split] [--custom-split SPLIT_TYPE]
+python evaluate.py <ground_truth_file> <submission_file> <metric> [--data-portion PORTION] [--after-split] [--custom-split SPLIT_TYPE] [additional metric-specific arguments]
 ```
 
 Arguments:
 - `ground_truth_file`: Path to ground truth parquet or csv file. Can be local path or S3 URL.
 - `submission_file`: Path to submission CSV file. Can be local path or S3 URL.
 - `metric`: Metric to compute (see Available Metrics below)
-- `--topk`: Number of top recommendations to consider for precision_at_k metric (default: 5)
 - `--data-portion`: Portion of ground truth data to use (float between 0 and 1, default: 1.0)
 - `--after-split`: If set, use remaining (1-portion) of data after the split point
 - `--custom-split`: Customized split ('public' or 'private') of ground truth data to use for evaluation. Cannot be used with `--data-portion`. If None, no split is applied. Default: None
-- `--skip-column-check`: If set, skip checking whether column names match between ground truth and submission files
+- `--skip-column-check`: Deprecated. Column checks are now implemented in the evaluators. Kept for backward compatibility.
+- Additional metric-specific arguments can be passed in either `--key=value` or `--key value` format
 
 Available metrics:
 - `accuracy`: Classification accuracy
@@ -44,6 +44,7 @@ Available metrics:
 - `mse`: Mean squared error
 - `pairwise_cost`: Evaluates pairwise preferences between items. Ground truth should contain columns SOURCE_A, SOURCE_B, TARGET, and B_OVER_A (indicating how much B is preferred over A). Submission should contain SOURCE, TARGET, and WEIGHT columns. The metric computes how well the predicted weights match the ground truth preferences.
 - `deepfunding`: Optimizes weights for combining multiple submissions to minimize pairwise preference costs. Ground truth format is the same as `pairwise_cost`. Instead of a single submission file, takes a text file containing paths to multiple submission files, each following the same format as `pairwise_cost` submissions. Returns optimized weights that minimize the overall cost when combining predictions from all submissions.
+- `gitcoin`: Evaluates predictions for Gitcoin funding distribution. Ground truth should contain columns PROJECT_ID, ROUND_ID, and AMOUNT. Submission should contain PROJECT, ROUND, and AMOUNT columns (PROJECT_ID is optional). The metric normalizes funding amounts within each round and computes RMSE between predicted and actual normalized distributions.
 
 Example:
 ```bash
@@ -59,11 +60,17 @@ python evaluate.py data/123_ground_truth.parquet data/123_1_dev1.csv rmse --data
 # Evaluate using public split
 python evaluate.py data/123_ground_truth.parquet data/123_1_dev1.csv rmse --custom-split public
 
+# Evaluate precision at k with custom k value
+python evaluate.py data/123_ground_truth.parquet data/123_1_dev1.csv precision_at_k --topk=10
+
 # Evaluate pairwise preferences
 python evaluate.py data/pairwise_ground_truth.parquet data/pairwise_submission.csv pairwise_cost
 
 # Optimize weights for combining multiple submissions
 python evaluate.py data/pairwise_ground_truth.parquet data/submission_paths.csv deepfunding
+
+# Evaluate Gitcoin funding predictions
+python evaluate.py data/gitcoin_ground_truth.parquet data/gitcoin_submission.csv gitcoin
 ```
 
 Example pairwise ground truth format:
@@ -93,6 +100,23 @@ path
 ```
 Each submission file should follow the pairwise submission format above. The submission paths file must be a CSV file with a 'path' column containing the paths to each submission file.
 
+Example Gitcoin ground truth format:
+```csv
+PROJECT_ID,ROUND_ID,AMOUNT
+123,865,1000
+456,865,2000
+789,863,1500
+```
+
+Example Gitcoin submission format:
+```csv
+PROJECT,ROUND,AMOUNT
+Project A,WEB3 INFRA,900
+Project B,WEB3 INFRA,2100
+Project C,DEV TOOLING,1600
+```
+The evaluator normalizes amounts within each round to calculate the funding distribution percentages, then computes RMSE between predicted and actual distributions. The evaluator requires a `projects_Apr_1.csv` file with PROJECT_ID and PROJECT columns for mapping if PROJECT_ID is not provided in the submission.
+
 Output:
 
 Evaluation results are printed to the console in the following format:
@@ -108,6 +132,20 @@ Evaluation results are printed to the console in the following format:
   ```
 
 ## Development
+
+### Project Organization
+
+The project is organized into several key modules:
+
+- **metrics.py**: Contains the mathematical functions for calculating metrics. These are the core algorithms that perform the actual metric calculations.
+
+- **evaluators.py**: Contains evaluator classes that wrap around the math metrics. Evaluators handle data loading, validation, and transformation before applying the metric calculations. Even for the same mathematical metric, there could be different evaluators depending on how the data needs to be transformed. Evaluators are the "metrics" used in competitions.
+
+- **evaluate.py**: The main script that processes command-line arguments and calls the appropriate evaluator.
+
+- **validators.py**: Contains validation functions used by evaluators to ensure data integrity.
+
+Parameters for metrics are passed as extra arguments in the command line. The evaluator parses these arguments and passes them to the metric calculation functions. Arguments can be specified in either `--key=value` or `--key value` format.
 
 ### General Procedure
 1. Create a new branch for your changes
@@ -125,9 +163,16 @@ pytest tests/
 ```
 
 ### Adding New Metrics
-1. Add the metric function to `metrics.py`
-2. Add corresponding unit tests in `tests/test_metrics.py`
-3. Register the metric in the `METRICS` dictionary in `metrics.py`
+1. Add the mathematical metric function to `metrics.py`
+2. Create a new evaluator class in `evaluators.py` that extends `BaseEvaluator`
+3. Implement the required methods in your evaluator:
+   - `transform()`: Prepare the data for metric calculation
+   - `compute_metric()`: Apply the metric calculation
+   - `get_default_params()`: Define default parameters
+   - `validate()`: (Optional) Overwrite the default validation logic in the BaseEvaluator class
+   - `read_data()`: (Optional) Overwrite the default data reading logic in the BaseEvaluator class
+4. Register your evaluator in the `EvaluatorRegistry`
+5. Add corresponding unit tests in `tests/test_metrics.py` and `tests/test_evaluators.py`
 
 
 
