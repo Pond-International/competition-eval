@@ -943,6 +943,12 @@ class GitcoinEvaluator(RMSEEvaluator):
         # Check for duplicate addresses in submission
         validators.validate_no_duplicates(submission_df, columns=["PROJECT", "ROUND"])
 
+        # Check if all projects are included
+        project_df = pd.read_csv("projects_Apr_1.csv", usecols=["PROJECT", "ROUND"])
+        project_df = project_df.merge(submission_df, on=["PROJECT", "ROUND"], how="left")
+        if project_df["AMOUNT"].isnull().any():
+            raise ValueError("Not all projects are included in the submission")
+        
         return True
 
     def transform(
@@ -982,27 +988,26 @@ class GitcoinEvaluator(RMSEEvaluator):
         if "PROJECT_ID" not in submission_df.columns:
             project_df = pd.read_csv("projects_Apr_1.csv", usecols=["PROJECT_ID", "PROJECT"])
             project_df.drop_duplicates(inplace=True)
-            submission_df = submission_df.join(project_df, on="PROJECT")
+            submission_df = submission_df.merge(project_df, on="PROJECT")
 
         # Group by PROJECT_ID and ROUND_ID and normalize amounts within each group
         submission_df["AMOUNT"] = pd.to_numeric(submission_df["AMOUNT"])
-        submission_df_grouped = submission_df.groupby(["PROJECT_ID", "ROUND_ID"])
+        submission_df_grouped = submission_df.groupby("ROUND_ID")
         submission_df["PRED"] = submission_df_grouped["AMOUNT"].transform(
             lambda x: x / x.sum() if x.sum() > 0 else 0
         )
 
-        ground_truth_df["AMOUNT"] = pd.to_numeric(ground_truth_df["AMOUNT"])
-        ground_truth_df_grouped = ground_truth_df.groupby(["PROJECT_ID", "ROUND_ID"])
-        ground_truth_df["LABEL"] = ground_truth_df_grouped["AMOUNT"].transform(
+        ground_truth_df["AMOUNT2"] = pd.to_numeric(ground_truth_df["AMOUNT"])
+        ground_truth_df["ROUND_ID"] = ground_truth_df["ROUND_ID"].astype(str)
+        ground_truth_df = ground_truth_df.merge(submission_df, on=["PROJECT_ID", "ROUND_ID"])
+        ground_truth_df_grouped = ground_truth_df.groupby("ROUND_ID")
+        ground_truth_df["LABEL"] = ground_truth_df_grouped["AMOUNT2"].transform(
             lambda x: x / x.sum() if x.sum() > 0 else 0
         )
 
-        # Merge data
-        df = ground_truth_df.merge(submission_df, how="left", on=["PROJECT_ID", "ROUND_ID"])
-
         # Extract arrays
-        y_true = df["LABEL"].values
-        y_pred = df["PRED"].values
+        y_true = ground_truth_df["LABEL"].values
+        y_pred = ground_truth_df["PRED"].values
 
         return y_true, y_pred
 
