@@ -908,6 +908,51 @@ class GitcoinEvaluator(RMSEEvaluator):
         self.name = "gitcoin"
         self.description = "Evaluator for Gitcoin funding prediction"
 
+    def read_data(
+        self, ground_truth_path: str, submission_path: str
+    ) -> Tuple[pd.DataFrame, pd.DataFrame]:
+        """Load ground truth and submission data.
+
+        Args:
+            ground_truth_path: Path to ground truth file
+            submission_path: Path to submission file
+
+        Returns:
+            Tuple of (ground_truth_df, submission_df)
+        """
+        # Load ground truth data
+        if ground_truth_path.endswith("parquet"):
+            ground_truth_df = pd.read_parquet(ground_truth_path)
+        elif ground_truth_path.endswith("csv"):
+            ground_truth_df = pd.read_csv(ground_truth_path)
+        else:
+            raise ValueError(
+                f"Unsupported file type for ground truth: {ground_truth_path}"
+            )
+        logger.debug(f"Ground truth shape: {ground_truth_df.shape}")
+
+        # Load submission data
+        submission_df = pd.read_csv(submission_path)
+        if submission_df["ROUND"].str.contains("ACY").any().item():
+            logger.warning("Submission is encoded with utf-7")
+            submission_df = pd.read_csv(submission_path, encoding="utf-7")
+        logger.debug(f"Submission shape: {submission_df.shape}")
+
+        return ground_truth_df, submission_df
+
+    def clean_alphanumeric(self, text: str) -> str:
+        """
+        Keeps only English letters and numbers in a string.
+        
+        Args:
+            text (str): The input string to clean
+            
+        Returns:
+            str: String containing only alphanumeric characters
+        """     
+        text = text.encode("ascii", "ignore").decode("ascii")
+        return ''.join(char for char in text if char.isalnum())
+
     def validate(
         self,
         ground_truth_df: pd.DataFrame,
@@ -943,11 +988,15 @@ class GitcoinEvaluator(RMSEEvaluator):
             )
             submission_df.columns = expected_cols[1:]
         # Check for duplicate addresses in submission
-        submission_df = submission_df.drop_duplicates()
+        submission_df.drop_duplicates(inplace=True)
         validators.validate_no_duplicates(submission_df, columns=["PROJECT", "ROUND"])
 
         # Check if all projects are included
         project_df = pd.read_csv("projects_Apr_1.csv", usecols=["PROJECT", "ROUND"])
+        project_df["PROJECT"] = project_df["PROJECT"].apply(self.clean_alphanumeric).str.upper()
+        project_df["ROUND"] = project_df["ROUND"].apply(self.clean_alphanumeric).str.upper()
+        submission_df["PROJECT"] = submission_df["PROJECT"].apply(self.clean_alphanumeric).str.upper()
+        submission_df["ROUND"] = submission_df["ROUND"].apply(self.clean_alphanumeric).str.upper()
         project_df = project_df.merge(submission_df, on=["PROJECT", "ROUND"], how="left")
         if project_df["AMOUNT"].isnull().any():
             raise ValueError("Not all projects are included in the submission")
@@ -983,14 +1032,17 @@ class GitcoinEvaluator(RMSEEvaluator):
 
         # Round name to ID mapping
         round_df = pd.DataFrame({
-            "ROUND": ["WEB3 INFRA", "DEV TOOLING", "DAPPS & APPS"],
+            "ROUND": ["WEB3INFRA", "DEVTOOLING", "DAPPSAPPS"],
             "ROUND_ID": ["865", "863", "867"]})
+        submission_df["ROUND"] = submission_df["ROUND"].apply(self.clean_alphanumeric).str.upper()
         submission_df = submission_df.merge(round_df, on="ROUND")
 
         # project name to ID mapping
         if "PROJECT_ID" not in submission_df.columns:
             project_df = pd.read_csv("projects_Apr_1.csv", usecols=["PROJECT_ID", "PROJECT"])
             project_df.drop_duplicates(inplace=True)
+            project_df["PROJECT"] = project_df["PROJECT"].apply(self.clean_alphanumeric).str.upper()
+            submission_df["PROJECT"] = submission_df["PROJECT"].apply(self.clean_alphanumeric).str.upper()
             submission_df = submission_df.merge(project_df, on="PROJECT")
 
         # Group by PROJECT_ID and ROUND_ID and normalize amounts within each group
