@@ -934,12 +934,14 @@ class GitcoinEvaluator(RMSEEvaluator):
         expected_cols = ["PROJECT_ID", "PROJECT", "ROUND", "AMOUNT"]
         if submission_df.shape[1] == 4:
             validators.validate_column_names(
-                submission_df, expected_cols, ignore_case=False
+                submission_df, expected_cols, ignore_case=True
             )
+            submission_df.columns = expected_cols
         else:
             validators.validate_column_names(
-                submission_df, expected_cols[1:], ignore_case=False
+                submission_df, expected_cols[1:], ignore_case=True
             )
+            submission_df.columns = expected_cols[1:]
         # Check for duplicate addresses in submission
         validators.validate_no_duplicates(submission_df, columns=["PROJECT", "ROUND"])
 
