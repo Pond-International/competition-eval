@@ -943,6 +943,7 @@ class GitcoinEvaluator(RMSEEvaluator):
             )
             submission_df.columns = expected_cols[1:]
         # Check for duplicate addresses in submission
+        submission_df = submission_df.drop_duplicates()
         validators.validate_no_duplicates(submission_df, columns=["PROJECT", "ROUND"])
 
         # Check if all projects are included
