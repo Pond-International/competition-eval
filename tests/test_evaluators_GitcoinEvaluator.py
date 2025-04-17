@@ -49,7 +49,6 @@ def sample_data_with_project_id():
         "PROJECT_ID": ["1", "1", "2", "2", "3", "3"],
         "PROJECT": ["Project A", "Project A", "Project B", "Project B", "Project C", "Project C"],
         "ROUND": ["WEB3 INFRA", "DEV TOOLING", "WEB3 INFRA", "DEV TOOLING", "WEB3 INFRA", "DEV TOOLING"],
-        "ROUND_ID": ["865", "863", "865", "863", "865", "863"],
         "AMOUNT": [90.0, 210.0, 160.0, 240.0, 60.0, 80.0]
     })
     
@@ -66,10 +65,17 @@ def test_gitcoin_evaluator_validate_with_project_id(gitcoin_evaluator, sample_da
     """Test validate method of GitcoinEvaluator with PROJECT_ID column."""
     ground_truth_df, submission_df = sample_data_with_project_id
     
+    # Create a mock DataFrame for the projects
+    mock_project_df = pd.DataFrame({
+        "PROJECT": ["Project A", "Project B", "Project C"],
+        "ROUND": ["WEB3 INFRA", "DEV TOOLING", "WEB3 INFRA"]
+    })
+    
     # Test validation with custom split
     with patch('src.evaluators.validators.validate_column_names', return_value=True), \
          patch('src.evaluators.validators.validate_no_duplicates', return_value=True), \
-         patch('src.evaluators.validators.validate_split_column', return_value=True):
+         patch('src.evaluators.validators.validate_split_column', return_value=True), \
+         patch('pandas.read_csv', return_value=mock_project_df):
         assert gitcoin_evaluator.validate(ground_truth_df, submission_df, custom_split="public") is True
 
 
@@ -77,10 +83,17 @@ def test_gitcoin_evaluator_validate_without_project_id(gitcoin_evaluator, sample
     """Test validate method of GitcoinEvaluator without PROJECT_ID column."""
     ground_truth_df, submission_df = sample_data
     
+    # Create a mock DataFrame for the projects
+    mock_project_df = pd.DataFrame({
+        "PROJECT": ["Project A", "Project B", "Project C"],
+        "ROUND": ["WEB3 INFRA", "DEV TOOLING", "WEB3 INFRA"]
+    })
+    
     # Test validation without PROJECT_ID column
     with patch('src.evaluators.validators.validate_column_names', return_value=True), \
          patch('src.evaluators.validators.validate_no_duplicates', return_value=True), \
-         patch('src.evaluators.validators.validate_split_column', return_value=True):
+         patch('src.evaluators.validators.validate_split_column', return_value=True), \
+         patch('pandas.read_csv', return_value=mock_project_df):
         assert gitcoin_evaluator.validate(ground_truth_df, submission_df, custom_split="public") is True
 
 
@@ -122,9 +135,21 @@ def test_gitcoin_evaluator_without_project_id():
     })
     
     # Mock the necessary components to avoid actual data processing
-    with patch('pandas.read_csv') as mock_read_csv, \
+    with patch('pandas.read_csv', return_value=pd.DataFrame({
+            "PROJECT_ID": ["1", "2"],
+            "PROJECT": ["Project A", "Project B"]
+        })), \
          patch('pandas.DataFrame.join', return_value=submission_df), \
-         patch('pandas.DataFrame.merge') as mock_merge, \
+         patch('pandas.DataFrame.merge', return_value=pd.DataFrame({
+            "PROJECT_ID": ["1", "2"],
+            "PROJECT": ["Project A", "Project B"],
+            "ROUND": ["WEB3 INFRA", "DEV TOOLING"],
+            "ROUND_ID": ["865", "863"],
+            "AMOUNT": [100.0, 200.0],
+            "PRED": [0.5, 0.5],
+            "AMOUNT2": [100.0, 200.0],
+            "LABEL": [0.5, 0.5]
+        })), \
          patch('pandas.DataFrame.groupby'), \
          patch('pandas.to_numeric'), \
          patch.object(GitcoinEvaluator, 'transform', return_value=(np.array([0.5, 0.5]), np.array([0.5, 0.5]))):

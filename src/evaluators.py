@@ -1054,7 +1054,8 @@ class GitcoinEvaluator(RMSEEvaluator):
 
         ground_truth_df["AMOUNT2"] = pd.to_numeric(ground_truth_df["AMOUNT"])
         ground_truth_df["ROUND_ID"] = ground_truth_df["ROUND_ID"].astype(str)
-        ground_truth_df = ground_truth_df.merge(submission_df, on=["PROJECT_ID", "ROUND_ID"])
+        ground_truth_df = submission_df.merge(ground_truth_df, on=["PROJECT_ID", "ROUND_ID"], how="left")
+        ground_truth_df.fillna(0, inplace=True)
         ground_truth_df_grouped = ground_truth_df.groupby("ROUND_ID")
         ground_truth_df["LABEL"] = ground_truth_df_grouped["AMOUNT2"].transform(
             lambda x: x / x.sum() if x.sum() > 0 else 0
