@@ -864,6 +864,8 @@ class DeepfundingEvaluator(BaseEvaluator):
             sub_df["SOURCE"] = sub_df["SOURCE"].astype(str).str.upper()
             sub_df["TARGET"] = sub_df["TARGET"].astype(str).str.upper()
             sub_df["WEIGHT"] = pd.to_numeric(sub_df["WEIGHT"])
+            sub_df["WEIGHT"] = sub_df.groupby("TARGET")["WEIGHT"].transform(lambda x: x / x.sum())
+            sub_df["WEIGHT"] = sub_df["WEIGHT"].fillna(0)
             sub_df = source_target.merge(sub_df, on=["SOURCE", "TARGET"], how="left")
             # Log-transform weights
             zero_weights = sub_df["WEIGHT"] == 0
