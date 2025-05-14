@@ -1034,8 +1034,8 @@ class GitcoinEvaluator(RMSEEvaluator):
 
         # Round name to ID mapping
         round_df = pd.DataFrame({
-            "ROUND": ["WEB3INFRA", "DEVTOOLING", "DAPPSAPPS"],
-            "ROUND_ID": ["865", "863", "867"]})
+            "ROUND": ["WEB3INFRA", "DEVTOOLING", "DAPPSAPPS", "MATUREBUILDERS"],
+            "ROUND_ID": ["865", "863", "867", "28"]})
         submission_df["ROUND"] = submission_df["ROUND"].apply(self.clean_alphanumeric).str.upper()
         submission_df = submission_df.merge(round_df, on="ROUND")
 
@@ -1046,6 +1046,8 @@ class GitcoinEvaluator(RMSEEvaluator):
             project_df["PROJECT"] = project_df["PROJECT"].apply(self.clean_alphanumeric).str.upper()
             submission_df["PROJECT"] = submission_df["PROJECT"].apply(self.clean_alphanumeric).str.upper()
             submission_df = submission_df.merge(project_df, on="PROJECT")
+        submission_df["PROJECT_ID"] = submission_df["PROJECT_ID"].fillna(submission_df["PROJECT"])
+        submission_df["PROJECT_ID"] = submission_df["PROJECT_ID"].apply(self.clean_alphanumeric).str.upper()
 
         # Group by PROJECT_ID and ROUND_ID and normalize amounts within each group
         submission_df["AMOUNT"] = pd.to_numeric(submission_df["AMOUNT"])
@@ -1056,6 +1058,7 @@ class GitcoinEvaluator(RMSEEvaluator):
 
         ground_truth_df["AMOUNT2"] = pd.to_numeric(ground_truth_df["AMOUNT"])
         ground_truth_df["ROUND_ID"] = ground_truth_df["ROUND_ID"].astype(str)
+        ground_truth_df["PROJECT_ID"] = ground_truth_df["PROJECT_ID"].apply(self.clean_alphanumeric).str.upper()
         ground_truth_df = submission_df.merge(ground_truth_df, on=["PROJECT_ID", "ROUND_ID"], how="left")
         ground_truth_df.fillna(0, inplace=True)
         ground_truth_df_grouped = ground_truth_df.groupby("ROUND_ID")
