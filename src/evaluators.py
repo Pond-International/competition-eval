@@ -1072,3 +1072,128 @@ class GitcoinEvaluator(RMSEEvaluator):
 
         return y_true, y_pred
 
+@EvaluatorRegistry.register
+class AUCPrEvaluator(AccuracyEvaluator):
+    """Evaluator for AUC-PR (Average Precision Score) metric."""
+    def __init__(self):
+        """Initialize the evaluator."""
+        self.name = "auc_pr"
+        self.description = "Area Under the Precision–Recall Curve"
+
+    def compute_metric(self, y_true: np.ndarray, y_pred: np.ndarray, **kwargs) -> float:
+        """Compute average precision (area under PR curve).
+
+        Args:
+            y_true: Ground truth binary labels
+            y_pred: Predicted probabilities or scores
+
+        Returns:
+            float: Average precision score
+        """
+        return metrics.auc_pr(y_true, y_pred)
+
+
+@EvaluatorRegistry.register
+class ModularEvaluator(BaseEvaluator):
+    """
+    Evaluator for modular metrics evaluation with support for grouping, weighting, and inversion.
+
+    This evaluator allows users to configure multiple metrics in a single evaluation run using a YAML-based config file.
+    Each label can have its own metric, weight, and optional group-by column.
+    """
+
+    def __init__(self):
+        """Initialize the modular evaluator."""
+        super().__init__(name="modular", description="Modular grouped and weighted evaluation")
+        self.config = None  # Config should be loaded externally before evaluation
+
+    def transform(
+        self,
+        ground_truth_df: pd.DataFrame,
+        submission_df: pd.DataFrame,
+        data_portion: float = 1.0,
+        after_split: bool = False,
+        custom_split: Optional[str] = None,
+    ) -> Tuple[pd.DataFrame, pd.DataFrame]:
+        """
+        Pass-through transformation for modular evaluator.
+
+        Args:
+            ground_truth_df: Ground truth dataframe
+            submission_df: Submission dataframe
+            data_portion: Unused
+            after_split: Unused
+            custom_split: Unused
+
+        Returns:
+            Tuple of (ground_truth_df, submission_df)
+        """
+        return ground_truth_df, submission_df
+
+    def compute_metric(
+        self,
+        ground_truth_df: pd.DataFrame,
+        submission_df: pd.DataFrame,
+        **kwargs  
+    ) -> float:
+        """
+        Compute a weighted score across multiple metrics as defined in self.config.
+
+        Raises:
+            ValueError: if self.config is not set or if any expected group is missing.
+        """
+        if not self.config:
+            raise ValueError("ModularEvaluator.config is not set")
+
+        total_score = 0.0
+        for col, cfg in self.config.items():
+            # pick up the right columns
+            y_true = ground_truth_df[col].values
+            y_pred = submission_df[cfg.get("prediction_col", col)].values
+
+            # optional grouping
+            if "group_by" in cfg:
+                group = ground_truth_df[cfg["group_by"]].values
+                df = pd.DataFrame({
+                    "y_true": y_true,
+                    "y_pred": y_pred,
+                    "group": group
+                })
+                unique_groups = df["group"].unique()
+
+                # make sure all of the user-declared weights are present
+                expected = set(cfg["group_weights"].keys())
+                missing = expected - set(unique_groups)
+                if missing:
+                    raise ValueError(f"Missing group(s) in ground truth: {missing}")
+
+                # compute a weighted sum of per-group AUCs
+                score = 0.0
+                for g, w in cfg["group_weights"].items():
+                    sub = df[df["group"] == g]
+                    # only if there’s at least two distinct labels
+                    if sub["y_true"].nunique() > 1:
+                        score += w * metrics.METRICS[cfg["metric"]](
+                            sub["y_true"].values,
+                            sub["y_pred"].values
+                        )
+            else:
+                score = metrics.METRICS[cfg["metric"]](y_true, y_pred)
+
+            # optional inversion
+            if cfg.get("inverse", False):
+                score = 1.0 - score
+
+            total_score += cfg["weight"] * score
+
+        return total_score
+
+
+    def get_default_params(self) -> Dict[str, Any]:
+        """
+        Return default parameters (none required for modular evaluator).
+
+        Returns:
+            Dict[str, Any]: Empty dict
+        """
+        return {}

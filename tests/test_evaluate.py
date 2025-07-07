@@ -9,6 +9,9 @@ from src.evaluate import main
 import pandas as pd
 import numpy as np
 
+import sys
+
+
 
 
 @pytest.fixture
@@ -215,3 +218,53 @@ def test_with_extra_args(mock_parser, mock_evaluator):
         except SystemExit as e:
             # Check that the exit code is as expected
             assert e.code == 0
+
+def test_evaluate_modular_yaml_logic(monkeypatch):
+    # 1) Simulate CLI args
+    monkeypatch.setattr(sys, "argv", [
+        "evaluate.py",
+        "fake_gt.csv",
+        "fake_sub.csv",
+        "modular",
+        "--config",
+        "src/configs/arbitrum_dapp.yaml",
+    ])
+
+    # 2) Make two tiny DataFrames
+    gt_df = pd.DataFrame({
+        "ADDRESS": ["a","b","c","d"],
+        "DAPP_ADDRESS": ["x","x","y","y"],
+        "HISTORICAL_CATEGORY": ["first_time_tx","first_time_tx","repeat_tx","repeat_tx"],
+        "LABEL": [0,1,0,1],
+    })
+    sub_df = pd.DataFrame({
+        "ADDRESS": ["a","b","c","d"],
+        "DAPP_ADDRESS": ["x","x","y","y"],
+        "HISTORICAL_CATEGORY": ["first_time_tx","first_time_tx","repeat_tx","repeat_tx"],
+        "LABEL": [0.1,0.9,0.2,0.8],
+    })
+
+    # 3) Patch the evaluator’s read_data (in evaluators.py), open(), and yaml.safe_load()
+    yaml_cfg = {
+        "LABEL": {
+            "metric": "auc",
+            "weight": 1.0,
+            "group_by": "HISTORICAL_CATEGORY",
+            "group_weights": {"first_time_tx": 0.6, "repeat_tx": 0.4},
+        }
+    }
+
+    with patch("evaluators.BaseEvaluator.read_data", return_value=(gt_df, sub_df)), \
+         patch("builtins.open", new_callable=MagicMock), \
+         patch("yaml.safe_load", return_value=yaml_cfg), \
+         patch("builtins.print") as mock_print:
+
+        # run main; it should sys.exit(0)
+        with pytest.raises(SystemExit) as e:
+            main()
+        assert e.value.code == 0
+
+        # and it should have printed the final-result JSON
+        mock_print.assert_called()
+        printed = mock_print.call_args[0][0]
+        assert "final_result" in printed.lower()

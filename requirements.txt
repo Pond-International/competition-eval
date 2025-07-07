@@ -8,3 +8,4 @@ boto3>=1.33.0
 python-dotenv>=1.0.0
 fsspec
 s3fs
+PyYAML==6.0.2

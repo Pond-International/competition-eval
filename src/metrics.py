@@ -6,7 +6,7 @@ from typing import List
 import numpy as np
 import pandas as pd
 from scipy.optimize import minimize
-from sklearn.metrics import accuracy_score, roc_auc_score
+from sklearn.metrics import accuracy_score, roc_auc_score, average_precision_score
 
 import validators
 
@@ -281,6 +281,23 @@ def deepfunding(
     )
     return result.x
 
+def auc_pr(y_true: np.ndarray, y_pred: np.ndarray) -> float:
+    """Calculate Average Precision Score (AUC-PR) between ground truth and predictions.
+    
+    Args:
+        y_true: Ground truth binary labels
+        y_pred: Predicted probabilities or scores
+        
+    Returns:
+        float: Average Precision score
+        
+    Raises:
+        ValueError: If inputs are invalid
+    """
+    validators.validate_numeric_inputs(y_true, y_pred)
+    validators.validate_value_range(y_pred, 0, 1)
+    return float(average_precision_score(y_true, y_pred))
+
 # Dictionary mapping metric names to functions
 METRICS = {
     'accuracy': accuracy,
@@ -291,5 +308,6 @@ METRICS = {
     'auc': auc,
     'mse': mean_squared_error,
     'pairwise_cost': pairwise_cost,
-    'deepfunding': deepfunding
+    'deepfunding': deepfunding,
+    'auc_pr': auc_pr,
 }

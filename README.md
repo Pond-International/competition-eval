@@ -45,6 +45,9 @@ Available metrics:
 - `pairwise_cost`: Evaluates pairwise preferences between items. Ground truth should contain columns SOURCE_A, SOURCE_B, TARGET, and B_OVER_A (indicating how much B is preferred over A). Submission should contain SOURCE, TARGET, and WEIGHT columns. The metric computes how well the predicted weights match the ground truth preferences.
 - `deepfunding`: Optimizes weights for combining multiple submissions to minimize pairwise preference costs. Ground truth format is the same as `pairwise_cost`. Instead of a single submission file, takes a text file containing paths to multiple submission files, each following the same format as `pairwise_cost` submissions. Returns optimized weights that minimize the overall cost when combining predictions from all submissions.
 - `gitcoin`: Evaluates predictions for Gitcoin funding distribution. Ground truth should contain columns PROJECT_ID, ROUND_ID, and AMOUNT. Submission should contain PROJECT, ROUND, and AMOUNT columns (PROJECT_ID is optional). The metric normalizes funding amounts within each round and computes RMSE between predicted and actual normalized distributions.
+- `auc_pr` : Area Under the Precision-Recall Curve for binary classification tasks.
+- `modular` : Run one or more metrics in a single evaluation via a YAML config. Supports per‐column metrics, optional grouping, custom group weights, and score inversion.
+
 
 Example:
 ```bash
@@ -71,6 +74,10 @@ python evaluate.py data/pairwise_ground_truth.parquet data/submission_paths.csv 
 
 # Evaluate Gitcoin funding predictions
 python evaluate.py data/gitcoin_ground_truth.parquet data/gitcoin_submission.csv gitcoin
+
+# Evaluate using modular evaluator
+python evaluate.py data/123_ground_truth.parquet data/123_1_dev1.csv modular --config modular_config.yaml
+
 ```
 
 Example pairwise ground truth format:
