@@ -1,0 +1,7 @@
+LABEL:
+  metric: auc
+  weight: 1.0
+  group_by: HISTORICAL_CATEGORY
+  group_weights:
+    first_time_tx: 0.6
+    repeat_tx: 0.4

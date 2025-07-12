@@ -106,6 +106,14 @@ def main() -> None:
                 f"Available metrics: {EvaluatorRegistry.list_evaluator_names()}"
             )
         evaluator = EvaluatorRegistry.get_evaluator(args.metric_name)
+
+        if args.metric_name == "modular":
+            import yaml
+            config_path = extra_args_dict.get("config", "configs/arbitrum_dapp.yaml")
+            with open(config_path, "r") as f:
+                config = yaml.safe_load(f)
+            evaluator.config = config
+
         score = evaluator.evalute(
             args.ground_truth_path, args.submission_path, args.data_portion, args.after_split, args.custom_split, **extra_args_dict
         )
